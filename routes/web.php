@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserManageController;
 use App\Http\Controllers\ForgotPwController;
 use App\Http\Controllers\CetakPDFController;
@@ -17,7 +16,6 @@ use App\Http\Controllers\PerusahaanController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\BackupRisalahController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\CounterNomorSuratController;
@@ -42,10 +40,6 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
-
-Route::get('/logout', function () {
-    return redirect()->route('login');
-});
 
 //Route::get('/forgot-password', [ForgotPwController::class, 'showForgotPasswordForm'])->name('forgot-password');
 Route::get('/forgot-password', [ForgotPwController::class, 'showForgotPasswordForm'])->name('forgot-password');
@@ -81,6 +75,13 @@ Route::middleware(['auth', 'role:1,2,3'])->group(function () {
     Route::get('/edit-profile', [ProfileController::class, 'editProfile'])->name('edit-profile');
     Route::post('/delete-photo', [ProfileController::class, 'deletePhoto'])->name('superadmin.deletePhoto');
     Route::post('/update-profile', [ProfileController::class, 'updateProfile'])->name('superadmin.updateProfile');
+
+    //Edit Memo Baru
+    Route::get('/memo/edit-baru/{id_memo}', [MemoController::class, 'editBaru'])->name('memo.edit-baru');
+    Route::put('/memo/update-baru/{id_memo}', [MemoController::class, 'updateBaru'])->name('memo/update-baru');
+
+    //Delete Lampiran Memo
+    Route::delete('/memo/lampiran-existing/{memoId}/{index}', [MemoController::class, 'deleteLampiranExisting'])->name('memo.lampiran.delete-existing');
 
     //Edit Undangan
     Route::get('/undangan/edit/{id}', [UndanganController::class, 'edit'])->name('undangan.edit');
@@ -144,16 +145,15 @@ Route::middleware(['auth', 'role:1'])->group(function () {
     Route::delete('/risalah/delete/{id_risalah}', [RisalahController::class, 'destroy'])->name('risalah.destroy');
 
     // manage user
-    Route::get('/user-manage/edit/{id}', [UserController::class, 'edit'])->name('user-manage.edit');
-    Route::delete('/user-manage/delete/{id}', [UserController::class, 'destroy'])->name('user-manage.destroy');
-    Route::put('/user-manage/restore/{id}', [UserController::class, 'restore'])->name('user-manage.restore');
-    Route::put('/user-manage/update/{id}', [UserController::class, 'update'])->name('user-manage/update');
-    Route::get('/role-management', [UserController::class, 'showRole'])->name('user.role');
+    Route::get('/user-manage/edit/{id}', [UserManageController::class, 'edit'])->name('user-manage.edit');
+    Route::delete('/user-manage/delete/{id}', [UserManageController::class, 'destroy'])->name('user-manage.destroy');
+    Route::put('/user-manage/restore/{id}', [UserManageController::class, 'restore'])->name('user-manage.restore');
+    Route::put('/user-manage/update/{id}', [UserManageController::class, 'update'])->name('user-manage/update');
+    Route::get('/role-management', [UserManageController::class, 'showRole'])->name('user.role');
     Route::get('/user-manage/paginate', [UserManageController::class, 'paginateUsers'])->name('user-manage.paginate');
     Route::get('/user-manage', [UserManageController::class, 'index'])->name('user.manage');
-    // Route::get('user-manage/add', [RegisteredUserController::class, 'create'])->name('user-manage/add');
-    Route::post('user-manage/add', [RegisteredUserController::class, 'store'])->name('user-manage/add');
-    Route::post('user-manage/import', [RegisteredUserController::class, 'import_ajax'])->name('user-manage.import');
+    Route::post('user-manage/add', [UserManageController::class, 'store'])->name('user-manage/add');
+    Route::post('user-manage/import', [UserManageController::class, 'import'])->name('user-manage.import');
 
     //Perusahaan Controller
     Route::post('/data-perusahaan/update', [PerusahaanController::class, 'update'])->name('data-perusahaan.update');
@@ -196,16 +196,6 @@ Route::middleware(['auth', 'role:1'])->group(function () {
 Route::middleware(['auth', 'role:1,2'])->group(function () {
     Route::get('/memo/edit/{id_memo}', [MemoController::class, 'edit'])->name('memo.edit');
     Route::put('/memo/update/{id_memo}', [MemoController::class, 'update'])->name('memo/update');
-
-    //Edit Memo Baru
-    Route::get('/memo/edit-baru/{id_memo}', [MemoController::class, 'editBaru'])->name('memo.edit-baru');
-    Route::put('/memo/update-baru/{id_memo}', [MemoController::class, 'updateBaru'])->name('memo/update-baru');
-
-    //Delete Lampiran Memo
-    Route::delete('/memo/lampiran-existing/{memoId}/{index}', [MemoController::class, 'deleteLampiranExisting'])->name('memo.lampiran.delete-existing');
-
-    //Delete Lampiran Risalah
-    Route::delete('/risalah/lampiran-existing/{id}/{index}', [RisalahController::class, 'deleteLampiranExisting'])->name('risalah.lampiran.delete-existing');
 
     //Delete Lampiran Risalah
     Route::delete('/risalah/lampiran-existing/{id}/{index}', [RisalahController::class, 'deleteLampiranExisting'])->name('risalah.lampiran.delete-existing');
@@ -284,7 +274,6 @@ Route::middleware(['auth', 'role:3'])->group(function () {
     Route::get('/view-memoDiterima/{id}', [MemoController::class, 'showDiterima'])->name('view.memo-diterima');
 
     //undangan
-    Route::get('/manager/undangan', [UndanganController::class, 'index'])->name('undangan.undangan');
     Route::put('/undangan/{id}/update-status', [UndanganController::class, 'updateDocumentStatus'])->name('undangan.updateStatus');
     Route::get('/manager/undangan', [KirimController::class, 'undangan'])->name('undangan.manager');
     // Undangan (Manager) - masuk & terkirim
@@ -297,17 +286,10 @@ Route::middleware(['auth', 'role:3'])->group(function () {
     Route::get('/risalah-tambah-tanpa-undangan', [KirimController::class, 'createCustom'])->name('add-risalah.custom.manager');
     Route::post('/risalah-store', [KirimController::class, 'store'])->name('risalah.store.manager');
     Route::get('/persetujuan-risalah/{id}', [KirimController::class, 'viewRisalah'])->name('persetujuan.risalah');
-    Route::put('/risalah/{id}/update-status', [RisalahController::class, 'updateStatus'])->name('risalah.updateStatus');
 });
 
 Route::middleware(['auth', 'role:2,3'])->group(function () {
     // memo
-    //Edit Memo Baru
-    Route::get('/memo/edit-baru/{id_memo}', [MemoController::class, 'editBaru'])->name('memo.edit-baru');
-    Route::put('/memo/update-baru/{id_memo}', [MemoController::class, 'updateBaru'])->name('memo/update-baru');
-
-    //Delete Lampiran Memo
-    Route::delete('/memo/lampiran-existing/{memoId}/{index}', [MemoController::class, 'deleteLampiranExisting'])->name('memo.lampiran.delete-existing');
     // Route::post('memo/add/doc', [MemoController::class, 'store'])->name('memo-admin.store');
     Route::post('memo/add/doc2', [MemoController::class, 'storeCoba'])->name('admin-memo.store');
 

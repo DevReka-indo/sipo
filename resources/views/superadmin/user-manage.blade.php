@@ -158,7 +158,7 @@
                                     <td class="text-center">{{ $user->position->nm_position ?? '-' }}</td>
                                     <td class="text-center">
                                         @if ($user->deleted_at)
-                                            <form action="{{ route('user-manage.restore', $user->id) }}" method="PUT"
+                                            <form action="{{ route('user-manage.restore', $user->id) }}" method="POST"
                                                 class="d-inline restore-form">
                                                 @csrf
                                                 @method('PUT')
@@ -1328,20 +1328,6 @@
 
 @push('scripts')
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM Content Loaded - Script dimulai');
-
-            $('#org_select_{{ $user->id ?? '-' }}').select2({
-                theme: "bootstrap-5",
-                placeholder: "Pilih Organisasi",
-                allowClear: true,
-                width: "100%"
-            });
-            $(document).ready(function() {
-                console.log("Select2 loaded?", typeof $.fn.select2);
-            });
-        });
-
         // Function untuk menampilkan notifikasi
         function showNotification(message, type) {
             if (typeof Swal !== 'undefined') {
@@ -1545,11 +1531,14 @@
 
 
 
-        document.getElementById('edit_parent_id').addEventListener('change', function() {
-            var selectedOption = this.options[this.selectedIndex];
-            var type = selectedOption.getAttribute('data-type');
-            document.getElementById('edit_parent_type').value = type;
-        });
+        const editParentId = document.getElementById('edit_parent_id');
+        if (editParentId) {
+            editParentId.addEventListener('change', function() {
+                var selectedOption = this.options[this.selectedIndex];
+                var type = selectedOption.getAttribute('data-type');
+                document.getElementById('edit_parent_type').value = type;
+            });
+        }
 
         function showUploadModal() {
             Swal.fire({
