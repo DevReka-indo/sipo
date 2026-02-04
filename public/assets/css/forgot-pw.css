@@ -60,7 +60,13 @@ body.forgot-pw .tip-item{
 .header p{color:rgba(255,255,255,.9);font-size:1.3rem;max-width:700px;margin:0 auto;line-height:1.6}
 
 /* Cards grid */
-.contact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-bottom:40px}
+.contact-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(300px,auto));
+    gap:30px;
+    margin-bottom:40px;
+    justify-content: center;
+}
 
 /* Contact card */
 .contact-card{
@@ -73,7 +79,10 @@ body.forgot-pw .tip-item{
   transition:.3s ease;
   animation:fadeInUp .8s ease-out;
 }
-.contact-card:hover{transform:translateY(-10px);box-shadow:0 30px 60px rgba(0,0,0,.15)}
+.contact-card:hover{
+    transform:translateY(-10px);
+    box-shadow:0 30px 60px rgba(0,0,0,.15)
+}
 .contact-card .icon{
   width:70px;height:70px;border-radius:50%;
   background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
@@ -127,8 +136,12 @@ body.forgot-pw .tip-item{
 
 /* Desktop: force 3 columns for contact cards */
 @media (min-width:992px){
-  .contact-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .contact-grid{
+      grid-template-columns: repeat(2, auto);
+      justify-content: center;
+  }
 }
+
 
 /* Responsive */
 @media (max-width:768px){

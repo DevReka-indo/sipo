@@ -13,7 +13,7 @@ class AuthController extends Controller
     {
         try {
         $credentials = $request->validate([
-            'email' => 'required|email',
+            'nip' => 'required',
             'password' => 'required'
         ]);
 
@@ -33,7 +33,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'firstname' => $user->firstname,
                 'lastname' => $user->lastname,
-                'username' => $user->username,
+                'nip' => $user->nip,
                 'email' => $user->email,
                 'password' => $user->password,
                 'phone_number' => $user->phone_number,

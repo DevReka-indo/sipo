@@ -42,7 +42,7 @@ class ArsipController extends Controller
             ->first();
 
         if ($existing) {
-            return redirect()->back()->with('warning', ucfirst($jenis_document) . ' sudah diarsipkan sebelumnya.');
+            return response()->json(['success' => false, 'message' => ucfirst($jenis_document) . ' sudah diarsipkan sebelumnya.']);
         }
 
         // Simpan arsip
@@ -52,7 +52,7 @@ class ArsipController extends Controller
             'jenis_document' => $modelClass,
         ]);
 
-        return redirect()->back()->with('success', ucfirst($jenis_document) . ' berhasil diarsipkan!');
+        return response()->json(['success' => true, 'message' => ucfirst($jenis_document) . ' berhasil diarsipkan!']);
     }
 
     // Tampilkan daftar arsip berdasarkan user yang login
@@ -64,13 +64,16 @@ class ArsipController extends Controller
         $user_id = Auth::id();
         $modelClass = "App\\Models\\" . ucfirst($jenis_document);
 
+        if (!$document_id) {
+            return response()->json(['success' => false, 'message' => ucfirst($jenis_document) . ' tidak ditemukan.']);
+        }
         // Hapus arsip hanya untuk user yang login
         Arsip::where('user_id', $user_id)
             ->where('document_id', $document_id)
             ->where('jenis_document', $modelClass)
             ->delete();
 
-        return redirect()->back()->with('success', ucfirst($jenis_document) . ' berhasil dikembalikan!');
+        return response()->json(['success' => true, 'message' => ucfirst($jenis_document) . ' berhasil dikembalikan!']);
     }
     public function indexMemo(Request $request)
     {
@@ -158,8 +161,7 @@ class ArsipController extends Controller
             return $arsip;
         });
 
-
-        return view('arsip.arsip-memo', compact('arsipMemo', 'sortDirection'));
+        return view('arsip.memo', compact('arsipMemo', 'sortDirection'));
     }
 
 
@@ -255,13 +257,17 @@ class ArsipController extends Controller
 
 
 
-        return view('arsip.arsip-undangan', compact('arsipUndangan', 'sortDirection'));
+        return view('arsip.undangan', compact('arsipUndangan', 'sortDirection'));
     }
 
 
     public function indexRisalah(Request $request)
     {
         $user_id = Auth::id();
+
+        $kode = Risalah::whereNotNull('kode')        // pastikan hanya yang ada kodenya
+            ->distinct()
+            ->pluck('kode');
 
         // Ambil daftar arsip risalah dari user
         $arsipQuery = Arsip::where('user_id', $user_id)
@@ -289,6 +295,10 @@ class ArsipController extends Controller
         }
         if ($request->filled('end_date')) {
             $risalahQuery->whereDate('tgl_dibuat', '<=', $request->end_date);
+        }
+
+        if ($request->filled('kode')) {
+            $risalahQuery->where('kode', $request->kode);
         }
 
         // Filter status jika disediakan
@@ -343,15 +353,16 @@ class ArsipController extends Controller
         });
 
 
-        return view('arsip.arsip-risalah', compact('arsipRisalah', 'sortDirection'));
+        return view('arsip.risalah', compact('arsipRisalah', 'sortDirection', 'kode'));
     }
 
 
     public function view($id)
     {
         $memo = Memo::where('id_memo', $id)->firstOrFail();
-
-        return view('arsip.view-arsipMemo', compact('memo'));
+        $pembuat = User::where('id', $memo->pembuat)->first();
+        $tujuanArray = explode(';', $memo->tujuan_string);
+        return view('arsip.view-arsipMemo', compact('memo', 'pembuat', 'tujuanArray'));
     }
 
     public function viewUndangan($id)
@@ -416,16 +427,46 @@ class ArsipController extends Controller
     public function viewRisalah($id)
     {
         $risalah = Risalah::where('id_risalah', $id)->firstOrFail();
+
         $userId = Auth::id();
-        $risalah = Risalah::findOrFail($id);
+        //$risalah = Risalah::findOrFail($id);
+
+        $idArray = explode(';', $risalah->tujuan);
+        $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+            ->whereIn('id', $idArray)
+            ->get()
+            ->sortBy(function ($user) {
+                return optional($user->position)->id_position;
+            })
+            ->values();
+
 
         // Ambil tujuan dari kolom tujuan di tabel undangan (bukan risalah)
-        $undangan = Undangan::where('judul', $risalah->judul)->first();
-        $idArray = [];
-        if ($undangan && $undangan->tujuan) {
-            $idArray = is_array($undangan->tujuan)
-                ? $undangan->tujuan
-                : explode(';', $undangan->tujuan);
+        // Cek apakah undangan dan tujuannya tidak null
+        if ($idArray) {
+            $pdfController = new \App\Http\Controllers\CetakPDFController();
+            $listNama = \App\Models\User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+                ->whereIn('id', $idArray)
+                ->get()
+                ->map(function ($user, $key) use ($pdfController) {
+                    $level = $pdfController->detectLevel($user);
+                    $user->level_kerja = $level;
+                    $user->bagian_text = $pdfController->getBagianText($user, $level);
+                    return $user;
+                })
+                ->sortBy(function ($user) {
+                    return optional($user->position)->id_position;
+                })
+                ->values();
+
+            $tujuanUsernames = $listNama->map(function ($user, $index) {
+                return ($index + 1) . '. '
+                    . $user->position->nm_position . ' '
+                    . $user->bagian_text . ' '
+                    . '(' . $user->firstname . ' ' . $user->lastname . ')';
+            })->implode("\n");
+        } else {
+            $tujuanUsernames = '-';
         }
 
         $pdfController = new CetakPDFController();
@@ -471,6 +512,6 @@ class ArsipController extends Controller
         // Karena hanya satu risalah, kita bisa mengambil dari collection lagi
         $risalah = $risalahCollection->first();
 
-        return view('arsip.view-arsipRisalah', compact('risalah'));
+        return view('arsip.view-arsipRisalah', compact('risalah', 'tujuanUsernames'));
     }
 }

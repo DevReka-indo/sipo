@@ -54,16 +54,47 @@ class LaporanController extends Controller
                 $query->where('kode', $kodeUser);
             }
         })
-        ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
-        ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
-        ->orderBy($sortBy, $sortDirection)
-        ->get();
+            ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
+            ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
+            ->orderBy($sortBy, $sortDirection)
+            ->get();
 
+        if ($request->filled('search')) {
+            $memos->where('judul', 'like', '%' . $request->search . '%');
+        }
+        //manager list
+        $user = Auth::user();
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
+        //dd($managers);
         return view('superadmin.laporan.cetak-laporan-memo', [
             'memos' => $memos,
             'divisi' => $divisi,
             'kode' => $kode,
-            'sortDirection' => $sortDirection
+            'sortDirection' => $sortDirection,
+            'managers' => $managers
         ]);
     }
 
@@ -104,15 +135,43 @@ class LaporanController extends Controller
                 $query->where('kode', $kodeUser);
             }
         })
-        ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
-        ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
-        ->orderBy($sortBy, $sortDirection)
-        ->get();
+            ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
+            ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
+            ->orderBy($sortBy, $sortDirection)
+            ->get();
+
+        //manager list
+        $user = Auth::user();
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
+
         return view('superadmin.laporan.cetak-laporan-undangan', [
             'undangans' => $undangans,
             'divisi' => $divisi,
             'kode' => $kode,
-            'sortDirection' => $sortDirection
+            'sortDirection' => $sortDirection,
+            'managers' => $managers
         ]);
     }
 
@@ -153,21 +212,49 @@ class LaporanController extends Controller
                 $query->where('kode', $kodeUser);
             }
         })
-        ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
-        ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
-        ->orderBy($sortBy, $sortDirection)
-        ->get();
+            ->whereDate('tgl_dibuat', '>=', $request->tgl_awal)
+            ->whereDate('tgl_dibuat', '<=', $request->tgl_akhir)
+            ->orderBy($sortBy, $sortDirection)
+            ->get();
+
+        //manager list
+        $user = Auth::user();
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
 
         return view('superadmin.laporan.cetak-laporan-risalah', [
             'risalahs' => $risalahs,
             'divisi' => $divisi,
             'kode' => $kode,
-            'sortDirection' => $sortDirection
+            'sortDirection' => $sortDirection,
+            'managers' => $managers
         ]);
     }
 
     public function index(Request $request)
     {
+        //dd($request->all());
         $divisi = Divisi::all();
         $kode = Memo::whereNotNull('kode')
             ->pluck('kode')
@@ -181,6 +268,10 @@ class LaporanController extends Controller
         if (!$user) {
             return redirect('/');
         }
+        $request->session()->put('filter_dates', [
+            'tgl_awal' => $request->tgl_awal,
+            'tgl_akhir' => $request->tgl_akhir,
+        ]);
 
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
@@ -223,6 +314,31 @@ class LaporanController extends Controller
             $memos->where('judul', 'like', '%' . $request->search . '%');
         }
 
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
+
+
         $memos = $memos->orderBy($sortBy, $sortDirection)->get();
 
         if (request()->route()->getName() === 'cetak-laporan-memo.superadmin' || request()->is('cetak-laporan-memo')) {
@@ -230,7 +346,8 @@ class LaporanController extends Controller
                 'memos' => $memos,
                 'divisi' => $divisi,
                 'kode' => $kode,
-                'sortDirection' => $sortDirection
+                'sortDirection' => $sortDirection,
+                'managers' => $managers
             ]);
         }
     }
@@ -286,13 +403,38 @@ class LaporanController extends Controller
         }
 
         $undangans = $undangans->orderBy($sortBy, $sortDirection)->get();
-
+        //manager list
+        $user = Auth::user();
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
         if (request()->route()->getName() === 'cetak-laporan-undangan.superadmin' || request()->is('cetak-laporan-undangan')) {
             return view('superadmin.laporan.cetak-laporan-undangan', [
                 'undangans' => $undangans,
                 'divisi' => $divisi,
                 'kode' => $kode,
-                'sortDirection' => $sortDirection
+                'sortDirection' => $sortDirection,
+                'managers' => $managers
             ]);
         }
     }
@@ -347,13 +489,39 @@ class LaporanController extends Controller
         }
 
         $risalahs = $risalahs->orderBy($sortBy, $sortDirection)->get();
+        //manager list
+        $user = Auth::user();
+        if ($user->role_id_role !== 1) {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)
+                ->where(function ($q) use ($user) {
+                    $q->where(function ($q2) use ($user) {
+                        $q2->whereNotNull('divisi_id_divisi')->where('divisi_id_divisi', $user->divisi_id_divisi);
+                    })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('department_id_department')->where('department_id_department', $user->department_id_department);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('section_id_section')->where('section_id_section', $user->section_id_section);
+                        })
+                        ->orWhere(function ($q2) use ($user) {
+                            $q2->whereNotNull('unit_id_unit')->where('unit_id_unit', $user->unit_id_unit);
+                        });
+                })
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        } else {
+            $managers = User::with('position:id_position,nm_position')
+                ->where('role_id_role', 3)->orderBy('firstname')
+                ->get(['id', 'firstname', 'lastname', 'position_id_position']);
+        }
 
         if (request()->route()->getName() === 'cetak-laporan-risalah.superadmin' || request()->is('cetak-laporan-risalah')) {
             return view('superadmin.laporan.cetak-laporan-risalah', [
                 'risalahs' => $risalahs,
                 'divisi' => $divisi,
                 'kode' => $kode,
-                'sortDirection' => $sortDirection
+                'sortDirection' => $sortDirection,
+                'managers' => $managers
             ]);
         }
     }

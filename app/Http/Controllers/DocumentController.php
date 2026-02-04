@@ -5,25 +5,26 @@ namespace App\Http\Controllers;
 use App\Models\kategori_barang;
 use Illuminate\Http\Request;
 use App\Models\Document;
-use App\Models\User;    
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 
 class DocumentController extends Controller
 {
     public function index(Request $request) {
         $status = $request->input('status');
         $documents = Document::where('status', $status)->paginate(10);
-    
+
         return view('documents.index', compact('documents'));
     }
-    
+
     public function create()
     {
         $currentMonth = now()->month;
         $currentYear = now()->year;
-        $divisiId = auth()->user()->divisi_id_divisi;
-        $divisiName = auth()->user()->divisi->nm_divisi;
+        $divisiId =  Auth::auth()->user()->divisi_id_divisi;
+        $divisiName =  Auth::auth()->user()->divisi->nm_divisi;
 
-        
+
 
         // Hitung nomor seri bulanan
         $nomorSeriBulanan = Document::where('bulan', $currentMonth)
@@ -52,7 +53,7 @@ class DocumentController extends Controller
         $managers = User::where('divisi_id_divisi', $divisiId)
         ->where('position_id_position', '2')
         ->get(['id', 'firstname', 'lastname']);
-       
+
         // Kirim data ke view
         return view('superadmin.memo.add-memo', [
             'nomorSeriBulanan' => $nomorSeriBulanan,
@@ -60,12 +61,12 @@ class DocumentController extends Controller
             'nomorDokumen' => $nomorDokumen,
             'managers' => $managers
         ]);
-        
-        
+
+
     }
     public function store(Request $request) {
-        
-        
+
+
         $request->validate([
             'jenis_document' => 'required|string|max:70',
             'judul' => 'required|string|max:70',
@@ -87,7 +88,7 @@ class DocumentController extends Controller
         ]);
 
 
-        
+
 
         $fileContent = null;
         if ($request->hasFile('tanda_identitas')) {
@@ -122,14 +123,14 @@ class DocumentController extends Controller
                     'barang' => $request->input('barang_' . $i),
                     'qty' => $request->input('qty_' . $i),
                     'satuan' => $request->input('satuan_' . $i),
-                    
+
                 ]);
             }
         }
-    
+
         return redirect()->route('memo.superadmin')->with('success', 'Dokumen berhasil dibuat.');
     }
-    
+
     private function convertToRoman($number) {
         $map = [
             1 => 'I', 2 => 'II', 3 => 'III', 4 => 'IV', 5 => 'V', 6 => 'VI',
@@ -139,7 +140,7 @@ class DocumentController extends Controller
     }
     public function updateDocumentStatus(Document $document) {
         $recipients = $document->recipients;
-    
+
         if ($recipients->every(fn($recipient) => $recipient->status === 'approve')) {
             $document->update(['status' => 'approve']);
         } elseif ($recipients->contains(fn($recipient) => $recipient->status === 'reject')) {
@@ -148,7 +149,7 @@ class DocumentController extends Controller
             $document->update(['status' => 'pending']);
         }
     }
-    
+
     public function updateDocumentApprovalDate(Document $document) {
         if ($document->status !== 'pending') {
             $document->update(['tanggal_disahkan' => now()]);
@@ -159,7 +160,7 @@ class DocumentController extends Controller
             'status' => 'approve',
             'tanggal_disahkan' => now() // Set tanggal disahkan
         ]);
-    
+
         return redirect()->back()->with('success', 'Dokumen berhasil disetujui.');
     }
     public function reject(Document $document) {
@@ -167,10 +168,10 @@ class DocumentController extends Controller
             'status' => 'reject',
             'tanggal_disahkan' => now() // Set tanggal disahkan
         ]);
-    
+
         return redirect()->back()->with('error', 'Dokumen ditolak.');
     }
-    
-    
-       
+
+
+
 }

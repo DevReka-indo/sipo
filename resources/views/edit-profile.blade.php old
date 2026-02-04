@@ -1,0 +1,811 @@
+@extends('layouts.app')
+
+@section('title', 'Edit Profile')
+@section('content')
+    <div class="container-fluid">
+        <div class="page-header">
+            <h3 class="fw-bold mb-3">Profil</h3>
+            <ul class="breadcrumbs mb-3">
+                <li class="nav-home">
+                    <a href="{{ route('dashboard') }}">
+                        <i class="icon-home"></i>
+                    </a>
+                </li>
+                <li class="separator">
+                    <i class="icon-arrow-right"></i>
+                </li>
+                <li class="nav-item">
+                    <a href="#">Profil</a>
+                </li>
+            </ul>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card p-4 shadow-sm rounded-3">
+                    {{-- Tombol Mode Edit --}}
+                    <div class="d-flex justify-content-end mb-3">
+                        <button type="button" id="editModeBtn" class="btn btn-warning fw-bold text-white px-4"
+                            onclick="toggleEditMode()">
+                            <i class="fas fa-edit me-2"></i>Edit Profil
+                        </button>
+                        <button type="button" id="cancelBtn" class="btn btn-secondary fw-bold px-4 me-2"
+                            onclick="cancelEdit()" style="display: none;">
+                            <i class="fas fa-times me-2"></i>Batal
+                        </button>
+                    </div>
+
+                    <form id="formProfile" action="{{ route('superadmin.updateProfile') }}" method="POST"
+                        enctype="multipart/form-data">
+                        @csrf
+
+                        {{-- Foto Profil --}}
+                        <div class="text-center mb-4">
+                            {{-- Input file tersembunyi --}}
+                            <input type="file" id="profileImageInput" name="profile_image" accept="image/*"
+                                style="display: none;">
+
+                            {{-- Container foto dengan hover effect --}}
+                            <div class="position-relative d-inline-block">
+                                @if ($user->profile_image)
+                                    <img id="profileImagePreview" src="data:image/png;base64,{{ $user->profile_image }}"
+                                        alt="profile-photo" class="rounded-circle img-fluid mb-3 profile-photo"
+                                        style="max-width:120px; height:120px; object-fit:cover; transition: all 0.3s ease;">
+                                @else
+                                    <div id="profileImagePreview" class="rounded-circle mb-3 profile-photo"
+                                        style="width:120px; height:120px; background: linear-gradient(45deg, #6c757d, #495057); position: relative; display: inline-block; transition: all 0.3s ease;">
+                                        <i class="fas fa-user text-white"
+                                            style="font-size: 48px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"></i>
+                                    </div>
+                                @endif
+
+                                {{-- Overlay saat mode edit --}}
+                                <div id="photoOverlay"
+                                    class="position-absolute top-0 start-0 w-100 h-100 rounded-circle d-flex align-items-center justify-content-center"
+                                    style="background: rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s ease; cursor: pointer; display: none;">
+                                    <div class="text-center text-white">
+                                        <i class="fas fa-camera mb-1" style="font-size: 24px;"></i>
+                                        <div style="font-size: 12px;">Klik untuk<br>ubah foto</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Tombol hapus foto --}}
+                            <div id="deletePhotoSection" style="display: none;">
+                                @if ($user->profile_image)
+                                    <button type="button" class="btn btn-outline-danger btn-sm mt-2"
+                                        onclick="deleteProfilePhoto()">
+                                        <i class="fas fa-trash me-1"></i>Hapus Foto
+                                    </button>
+                                @endif
+                            </div>
+
+                            <h5 class="fw-bold mb-1">
+                                <span id="displayName">{{ $user->firstname }} {{ $user->lastname }}</span>
+                            </h5>
+                            <p class="text-muted">{{ $user->email }}</p>
+                        </div>
+
+                        {{-- Detail Profil --}}
+                        <div class="row g-3">
+                            {{-- Posisi (Read Only) --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-secondary mb-2">
+                                    <i class="fas fa-briefcase me-2"></i>Posisi
+                                </label>
+
+                                @if (Auth::user()->role_id_role == 1)
+                                    <input type="text" class="form-control bg-light border-0 text-muted"
+                                        value="Super Admin" disabled>
+                                @else
+                                    <input type="text" class="form-control bg-light border-0 text-muted"
+                                        value="{{ $position ?? '-' }}" disabled>
+                                @endif
+
+                                <small class="text-muted">
+                                    <i class="fas fa-lock me-1"></i>Posisi tidak dapat diubah
+                                </small>
+                            </div>
+
+                            {{-- Email --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-secondary mb-2">
+                                    <i class="fas fa-envelope me-2"></i>Email
+                                </label>
+                                <input type="email" name="email" id="email"
+                                    class="form-control bg-light border-0 text-muted" value="{{ $user->email }}" disabled>
+                                <small class="text-muted">
+                                    <i class="fas fa-lock me-1"></i>Email tidak dapat diubah
+                                </small>
+                            </div>
+
+                            {{-- Nama Depan --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-primary mb-2">
+                                    <i class="fas fa-user me-2"></i>Nama Depan
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" name="firstname" id="firstname"
+                                    class="form-control profile-input bg-light border-0" value="{{ $user->firstname }}"
+                                    readonly required>
+                                <div class="invalid-feedback" id="firstnameError"></div>
+                            </div>
+
+                            {{-- Nama Belakang --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-primary mb-2">
+                                    <i class="fas fa-user me-2"></i>Nama Belakang
+                                    {{-- <span class="text-danger">*</span> --}}
+                                </label>
+                                <input type="text" name="lastname" id="lastname"
+                                    class="form-control profile-input bg-light border-0" value="{{ $user->lastname }}"
+                                    readonly>
+                                <div class="invalid-feedback" id="lastnameError"></div>
+                            </div>
+
+                            {{-- nip --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-primary mb-2">
+                                    <i class="fas fa-at me-2"></i> NIP
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" name="nip" id="nip"
+                                    class="form-control profile-input bg-light border-0" value="{{ $user->nip }}"
+                                    readonly required>
+                                <div class="invalid-feedback" id="nipError"></div>
+                            </div>
+
+                            {{-- Nomor Telepon --}}
+                            <div class="col-md-6">
+                                <label class="fw-bold text-primary mb-2">
+                                    <i class="fas fa-phone me-2"></i>Nomor Telepon
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" name="phone_number" id="phone_number"
+                                    class="form-control profile-input bg-light border-0"
+                                    value="{{ $user->phone_number ?? '' }}" readonly placeholder="Belum diisi" required>
+                                <div class="invalid-feedback" id="phoneError"></div>
+                            </div>
+                        </div>
+
+                        {{-- Field Password (Hidden default) --}}
+                        <div id="passwordFields" class="mt-4" style="display: none;">
+                            <h6 class="fw-bold text-primary mb-3">
+                                <i class="fas fa-lock me-2"></i>Ubah Password
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="fw-bold text-secondary mb-2">Password Baru</label>
+                                    <div class="input-group">
+                                        <input type="password" name="password" id="password" class="form-control"
+                                            placeholder="Minimal 6 karakter">
+                                        <button type="button" class="btn btn-outline-secondary"
+                                            onclick="togglePassword('password')">
+                                            <i class="fas fa-eye" id="passwordEye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="invalid-feedback" id="passwordError"></div>
+                                    <small class="text-muted">Kosongkan jika tidak ingin mengubah password</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="fw-bold text-secondary mb-2">Konfirmasi Password</label>
+                                    <div class="input-group">
+                                        <input type="password" name="password_confirmation" id="password_confirmation"
+                                            class="form-control" placeholder="Ulangi password baru">
+                                        <button type="button" class="btn btn-outline-secondary"
+                                            onclick="togglePassword('password_confirmation')">
+                                            <i class="fas fa-eye" id="passwordConfirmEye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="invalid-feedback" id="passwordConfirmError"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Tombol Simpan --}}
+                        <div class="text-end mt-4" id="saveSection" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <span class="text-danger">*</span> Field wajib diisi
+                                </small>
+                                <button type="button" class="btn btn-primary px-4 fw-bold" onclick="updateProfile()">
+                                    <i class="fas fa-save me-2"></i>Simpan Perubahan
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- CSS Styling --}}
+    <style>
+        .profile-photo {
+            border: 3px solid #e9ecef;
+        }
+
+        .profile-photo-clickable {
+            cursor: pointer;
+        }
+
+        .profile-photo-clickable:hover {
+            transform: scale(1.05);
+            border-color: #007bff;
+        }
+
+        .profile-input:not([readonly]):not([disabled]) {
+            background-color: white !important;
+            border: 1px solid #ced4da !important;
+        }
+
+        .profile-input:not([readonly]):not([disabled]):focus {
+            border-color: #007bff !important;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25) !important;
+        }
+
+        input[disabled] {
+            background-color: #f8f9fa !important;
+            color: #6c757d !important;
+            cursor: not-allowed;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        .form-label {
+            font-weight: 600;
+        }
+
+        .btn-warning {
+            background: linear-gradient(45deg, #ff9a56, #ff6b35);
+            border: none;
+        }
+
+        .btn-warning:hover {
+            background: linear-gradient(45deg, #ff8a46, #ff5b25);
+            transform: translateY(-1px);
+        }
+
+        .input-group .btn-outline-secondary {
+            border-color: #ced4da;
+        }
+
+        @media (max-width: 768px) {
+
+            .profile-photo,
+            #profileImagePreview {
+                width: 100px !important;
+                height: 100px !important;
+                max-width: 100px !important;
+            }
+        }
+    </style>
+
+    <script>
+        let isEditMode = false;
+        let isDirty = false;
+        let originalValues = {};
+        let currentOverlayOpacityHandlerBound = false;
+
+        // ———————————————————————————
+        // EDIT MODE TOGGLE
+        // ———————————————————————————
+        function toggleEditMode() {
+            isEditMode = !isEditMode;
+            if (isEditMode) {
+                enableEditMode();
+            } else {
+                cancelEdit(); // akan handle reset UI
+            }
+        }
+
+        function enableEditMode() {
+            // Simpan nilai awal hanya untuk field yang bisa diedit
+            document.querySelectorAll('.profile-input:not([disabled])').forEach(input => {
+                originalValues[input.name] = input.value;
+            });
+
+            // Enable semua input yang bisa diedit
+            document.querySelectorAll('.profile-input:not([disabled])').forEach(input => {
+                input.removeAttribute('readonly');
+                input.classList.remove('bg-light', 'border-0');
+            });
+
+            // Tampilkan bagian-bagian edit
+            showById('passwordFields', true);
+            showById('saveSection', true);
+            showById('deletePhotoSection', true);
+            showById('photoOverlay', true);
+
+            // Tombol
+            showById('editModeBtn', false);
+            showById('cancelBtn', true);
+
+            // Foto bisa diklik
+            const preview = document.getElementById('profileImagePreview');
+            preview?.classList.add('profile-photo-clickable');
+
+            // Mulai sesi edit baru
+            isDirty = false;
+        }
+
+        async function cancelEdit() {
+            // Konfirmasi jika ada perubahan
+            if (isEditMode && isDirty) {
+                const ok = await swalConfirm({
+                    title: 'Perubahan belum disimpan',
+                    html: 'Yakin batal edit? Perubahan akan hilang.',
+                    icon: 'warning',
+                    confirmText: 'Batalkan Perubahan',
+                    confirmBtnClass: 'btn btn-warning px-4 py-2'
+                });
+                if (!ok) {
+                    return;
+                }
+            }
+
+            // Kembalikan nilai awal
+            document.querySelectorAll('.profile-input:not([disabled])').forEach(input => {
+                if (Object.prototype.hasOwnProperty.call(originalValues, input.name)) {
+                    input.value = originalValues[input.name];
+                }
+                input.setAttribute('readonly', true);
+                input.classList.add('bg-light', 'border-0');
+                input.classList.remove('is-invalid');
+            });
+
+            // Bersihkan field password
+            setValueIfExist('password', '');
+            setValueIfExist('password_confirmation', '');
+
+            // Sembunyikan bagian-bagian edit
+            showById('passwordFields', false);
+            showById('saveSection', false);
+            showById('deletePhotoSection', false);
+            showById('photoOverlay', false);
+
+            // Tombol
+            showById('editModeBtn', true);
+            showById('cancelBtn', false);
+
+            // Nonaktifkan klik foto
+            const preview = document.getElementById('profileImagePreview');
+            preview?.classList.remove('profile-photo-clickable');
+
+            // Reset state
+            isEditMode = false;
+            isDirty = false;
+            clearErrors();
+        }
+
+        // ———————————————————————————
+        // FOTO PROFIL: PREVIEW + VALIDASI + HAPUS
+        // ———————————————————————————
+        document.addEventListener('DOMContentLoaded', function() {
+            const profilePhoto = document.getElementById('profileImagePreview');
+            const fileInput = document.getElementById('profileImageInput');
+            const overlay = document.getElementById('photoOverlay');
+
+            if (profilePhoto && fileInput) {
+                // Klik
+                profilePhoto.addEventListener('click', () => {
+                    if (isEditMode) fileInput.click();
+                });
+                overlay?.addEventListener('click', () => {
+                    if (isEditMode) fileInput.click();
+                });
+
+                // Hover overlay
+                const showOverlay = () => {
+                    if (isEditMode && overlay) overlay.style.opacity = '1';
+                };
+                const hideOverlay = () => {
+                    if (isEditMode && overlay) overlay.style.opacity = '0';
+                };
+
+                profilePhoto.addEventListener('mouseenter', showOverlay);
+                profilePhoto.addEventListener('mouseleave', hideOverlay);
+                overlay?.addEventListener('mouseenter', showOverlay);
+                overlay?.addEventListener('mouseleave', hideOverlay);
+
+                // Validasi file dengan SweetAlert
+                fileInput.addEventListener('change', async function(e) {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    if (file.size > 2 * 1024 * 1024) {
+                        await showAlert('Ukuran file terlalu besar. Maksimal 2MB.', 'error');
+                        fileInput.value = '';
+                        return;
+                    }
+
+                    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+                    if (!allowed.includes(file.type)) {
+                        await showAlert('Format file tidak didukung. Gunakan JPG, PNG, atau GIF.',
+                            'error');
+                        fileInput.value = '';
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (ev) => previewImage(ev.target.result);
+                    reader.readAsDataURL(file);
+                    isDirty = true;
+                });
+            }
+        });
+
+        function previewImage(src) {
+            const container = document.getElementById('profileImagePreview')?.parentNode;
+            const current = document.getElementById('profileImagePreview');
+            const overlay = document.getElementById('photoOverlay');
+            if (!container || !current) return;
+
+            current.remove();
+
+            const newImg = document.createElement('img');
+            newImg.id = 'profileImagePreview';
+            newImg.src = src;
+            newImg.alt = 'profile-photo';
+            newImg.className = 'rounded-circle img-fluid mb-3 profile-photo profile-photo-clickable';
+            newImg.style.cssText =
+                'max-width:120px; height:120px; object-fit:cover; transition:.3s; border:3px solid #e9ecef;';
+
+            // Bind ulang klik + hover
+            newImg.addEventListener('click', () => {
+                if (isEditMode) document.getElementById('profileImageInput')?.click();
+            });
+            newImg.addEventListener('mouseenter', () => {
+                if (isEditMode && overlay) overlay.style.opacity = '1';
+            });
+            newImg.addEventListener('mouseleave', () => {
+                if (isEditMode && overlay) overlay.style.opacity = '0';
+            });
+
+            container.insertBefore(newImg, overlay || null);
+        }
+
+        async function deleteProfilePhoto() {
+            if (!isEditMode) return;
+
+            const ok = await swalConfirm({
+                title: 'Hapus Foto Profil?',
+                html: 'Foto profil akan dihapus dan diganti avatar standar.',
+                icon: 'warning',
+                confirmText: 'Hapus Foto',
+                confirmBtnClass: 'btn btn-danger px-4 py-2'
+            });
+            if (!ok) return;
+
+            Swal.fire({
+                title: 'Menghapus...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            try {
+                await fetchJson(@json(route('superadmin.deletePhoto')), {
+                    method: 'POST'
+                });
+
+                const container = document.getElementById('profileImagePreview')?.parentNode;
+                const current = document.getElementById('profileImagePreview');
+                const overlay = document.getElementById('photoOverlay');
+                if (current && container) {
+                    current.remove();
+
+                    const newDiv = document.createElement('div');
+                    newDiv.id = 'profileImagePreview';
+                    newDiv.className = 'rounded-circle mb-3 profile-photo profile-photo-clickable';
+                    newDiv.style.cssText =
+                        'width:120px; height:120px; background:linear-gradient(45deg,#6c757d,#495057); position:relative; display:inline-block; transition:.3s; border:3px solid #e9ecef;';
+
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-user text-white';
+                    icon.style.cssText =
+                        'font-size:48px; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);';
+                    newDiv.appendChild(icon);
+
+                    newDiv.addEventListener('click', () => {
+                        if (isEditMode) document.getElementById('profileImageInput')?.click();
+                    });
+                    newDiv.addEventListener('mouseenter', () => {
+                        if (isEditMode && overlay) overlay.style.opacity = '1';
+                    });
+                    newDiv.addEventListener('mouseleave', () => {
+                        if (isEditMode && overlay) overlay.style.opacity = '0';
+                    });
+
+                    container.insertBefore(newDiv, overlay || null);
+                }
+
+                const fileInput = document.getElementById('profileImageInput');
+                if (fileInput) fileInput.value = '';
+
+                isDirty = true;
+                await showAlert('Foto profil telah dihapus.', 'success');
+            } catch (e) {
+                await showAlert(e.message || 'Gagal menghapus foto.', 'error');
+            }
+        }
+
+        // ———————————————————————————
+        // PASSWORD VISIBILITY
+        // ———————————————————————————
+        function togglePassword(fieldId) {
+            const field = document.getElementById(fieldId);
+            const eye = document.getElementById(fieldId + 'Eye');
+            if (!field || !eye) return;
+
+            if (field.type === 'password') {
+                field.type = 'text';
+                eye.classList.remove('fa-eye');
+                eye.classList.add('fa-eye-slash');
+            } else {
+                field.type = 'password';
+                eye.classList.remove('fa-eye-slash');
+                eye.classList.add('fa-eye');
+            }
+        }
+
+        // ———————————————————————————
+        // VALIDASI FIELD
+        // ———————————————————————————
+        function validateField(fieldId, rules) {
+            const field = document.getElementById(fieldId);
+            const errorDiv = document.getElementById(fieldId + 'Error');
+            if (!field || !errorDiv) return true;
+
+            field.classList.remove('is-invalid');
+            errorDiv.textContent = '';
+
+            const value = (field.value || '').trim();
+            let isValid = true;
+
+            if (rules.required && !value) {
+                errorDiv.textContent = 'Field ini wajib diisi.';
+                field.classList.add('is-invalid');
+                isValid = false;
+            } else if (value) {
+                if (rules.minLength && value.length < rules.minLength) {
+                    errorDiv.textContent = `Minimal ${rules.minLength} karakter.`;
+                    field.classList.add('is-invalid');
+                    isValid = false;
+                }
+                if (rules.maxLength && value.length > rules.maxLength) {
+                    errorDiv.textContent = `Maksimal ${rules.maxLength} karakter.`;
+                    field.classList.add('is-invalid');
+                    isValid = false;
+                }
+                if (rules.pattern && !rules.pattern.test(value)) {
+                    errorDiv.textContent = rules.patternMessage || 'Format tidak valid.';
+                    field.classList.add('is-invalid');
+                    isValid = false;
+                }
+            }
+
+            if (isEditMode) isDirty = true;
+            return isValid;
+        }
+
+        function validatePasswords() {
+            const password = document.getElementById('password');
+            const passwordConfirm = document.getElementById('password_confirmation');
+            const errorPwd = document.getElementById('passwordError');
+            const errorConfirm = document.getElementById('passwordConfirmError');
+
+            let valid = true;
+            if (!password || !passwordConfirm || !errorPwd || !errorConfirm) return true;
+
+            // reset
+            password.classList.remove('is-invalid');
+            passwordConfirm.classList.remove('is-invalid');
+            errorPwd.textContent = '';
+            errorConfirm.textContent = '';
+
+            if (password.value.length > 0) {
+                if (password.value.length < 6) {
+                    errorPwd.textContent = 'Password minimal 6 karakter.';
+                    password.classList.add('is-invalid');
+                    valid = false;
+                }
+
+                if (passwordConfirm.value.length === 0) {
+                    errorConfirm.textContent = 'Konfirmasi password wajib diisi.';
+                    passwordConfirm.classList.add('is-invalid');
+                    valid = false;
+                } else if (password.value !== passwordConfirm.value) {
+                    errorConfirm.textContent = 'Konfirmasi password tidak sama.';
+                    passwordConfirm.classList.add('is-invalid');
+                    valid = false;
+                }
+            }
+
+            if (isEditMode) isDirty = true;
+            return valid;
+        }
+
+
+        function clearErrors() {
+            document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+            document.querySelectorAll('.invalid-feedback').forEach(el => el.textContent = '');
+        }
+
+        function updateDisplayName() {
+            const fn = document.getElementById('firstname')?.value?.trim() || '';
+            const ln = document.getElementById('lastname')?.value?.trim() || '';
+            const target = document.getElementById('displayName');
+            if (target) target.textContent = `${fn} ${ln}`.trim();
+        }
+
+        // ———————————————————————————
+        // BIND EVENT VALIDASI + SUBMIT
+        // ———————————————————————————
+        document.addEventListener('DOMContentLoaded', function() {
+            // Rules
+            const validationRules = {
+                firstname: {
+                    required: true,
+                    maxLength: 50,
+                    pattern: /^[A-Za-z.\s]+$/,
+                    patternMessage: 'Hanya huruf, titik, dan spasi.'
+                },
+                lastname: {
+                    required: false,
+                    maxLength: 50,
+                    pattern: /^[A-Za-z.\s]+$/,
+                    patternMessage: 'Hanya huruf, titik, dan spasi.'
+                },
+                nip: {
+                    required: true,
+                    maxLength: 255,
+                    pattern: /^[A-Za-z0-9_.\s]+$/,
+                    patternMessage: 'Hanya huruf, angka, underscore, titik, dan spasi.'
+                },
+                phone_number: {
+                    required: true,
+                    maxLength: 15,
+                    pattern: /^[0-9\+]+$/,
+                    patternMessage: 'Format nomor telepon tidak valid.'
+                }
+            };
+
+            // Listener per field
+            Object.keys(validationRules).forEach(id => {
+                const field = document.getElementById(id);
+                if (!field) return;
+
+                field.addEventListener('blur', () => validateField(id, validationRules[id]));
+                field.addEventListener('input', () => {
+                    if (id === 'firstname' || id === 'lastname') updateDisplayName();
+                    if (isEditMode) isDirty = true;
+                });
+            });
+
+            // Password listeners
+            document.getElementById('password')?.addEventListener('input', validatePasswords);
+            document.getElementById('password_confirmation')?.addEventListener('input', validatePasswords);
+
+            // Submit form: validasi dulu
+            document.getElementById('formProfile')?.addEventListener('submit', async function(e) {
+                e.preventDefault(); // cegah submit native SELALU
+
+                let ok = true;
+
+                // Validasi field lain
+                Object.keys(validationRules).forEach(id => {
+                    if (!validateField(id, validationRules[id])) ok = false;
+                });
+
+                // Validasi password
+                if (!validatePasswords()) ok = false;
+
+                if (!ok) {
+                    await showAlert('Mohon periksa kembali data yang diisi.', 'error');
+                    return; // ⬅️ hentikan di sini, jangan lanjut
+                }
+
+                // valid -> jalankan AJAX
+                updateProfile();
+            });
+
+        });
+
+        // ———————————————————————————
+        // SUBMIT PROFIL (AJAX) DENGAN SWEETALERT
+        // ———————————————————————————
+        async function updateProfile() {
+            const form = document.getElementById('formProfile');
+            if (!form) return;
+            let success = false;
+            let message = '';
+
+            try {
+                const formData = new FormData(form);
+                const res = await fetch(form.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: formData
+                });
+                console.log(res);
+                const ct = res.headers.get('content-type') || '';
+                if (ct.includes('application/json')) {
+                    let data = null;
+                    try {
+                        data = await res.json();
+                    } catch (_) {}
+                    success = !!(res.ok && (data?.success ?? true));
+                    // default ke true bila JSON valid tanpa field success
+                    message = data?.message || (success ? 'Profil berhasil diperbarui' : 'Gagal memperbarui profil');
+                } else {
+                    // Fallback untuk HTML/redirect
+                    success = res.ok;
+                    message = success ? 'Profil berhasil diperbarui' : `Request gagal (${res.status}).`;
+                }
+                console.log({
+                    success,
+                    message
+                });
+                if (!success) {
+                    await Swal.fire({
+                        title: 'Gagal!',
+                        text: message,
+                        icon: 'error',
+                        confirmButtonText: 'OK',
+                        customClass: {
+                            confirmButton: 'btn btn-danger px-4 py-2'
+                        },
+                        buttonsStyling: false
+                    });
+                    return;
+                }
+
+                await Swal.fire({
+                    title: 'Berhasil!',
+                    text: message,
+                    icon: 'success',
+                    confirmButtonText: 'OK',
+                    customClass: {
+                        confirmButton: 'btn btn-success px-4 py-2'
+                    },
+                    buttonsStyling: false
+                });
+
+                window.location.reload();
+
+            } catch (err) {
+                await Swal.fire({
+                    title: 'Error!',
+                    text: err.message || 'Terjadi kesalahan pada server',
+                    icon: 'error',
+                    confirmButtonText: 'OK',
+                    customClass: {
+                        confirmButton: 'btn btn-danger px-4 py-2'
+                    },
+                    buttonsStyling: false
+                });
+            }
+        }
+
+
+        // ———————————————————————————
+        // UTIL MINI
+        // ———————————————————————————
+        function showById(id, show) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.style.display = show ? (el.dataset.display || (el.tagName === 'DIV' ? 'block' : 'inline-block')) : 'none';
+        }
+
+        function setValueIfExist(id, val) {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+        }
+    </script>
+@endsection

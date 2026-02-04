@@ -56,7 +56,7 @@ class SeriRisalah extends Model
         $Risalah = DB::table('risalah')
             ->where('kode', $divisiId)
             ->count();
-        
+
 
         if ($Risalah === 0) {
             // Jika tidak ada memo, reset seri bulanan dan tahunan ke 1
@@ -66,7 +66,7 @@ class SeriRisalah extends Model
             // Ambil nomor seri terakhir berdasarkan tahun & divisi
             $lastSeri = self::where('kode', $divisiId)
                 ->where('tahun', $currentYear)
-                ->latest()
+                ->latest('id_seri')
                 ->first();
 
             if (!$lastSeri) {

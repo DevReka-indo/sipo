@@ -49,7 +49,7 @@ class BackupController extends Controller
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('judul', 'like', '%' . $request->search . '%')
-                    ->orWhere('nomor_document', 'like', '%' . $request->search . '%');
+                    ->orWhere('nomor_memo', 'like', '%' . $request->search . '%');
             });
         }
 
@@ -100,7 +100,7 @@ class BackupController extends Controller
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('judul', 'like', '%' . $request->search . '%')
-                    ->orWhere('nomor_document', 'like', '%' . $request->search . '%');
+                    ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
             });
         }
 
@@ -134,10 +134,11 @@ class BackupController extends Controller
     }
     public function bulkRestoreMemo(Request $request)
     {
+
         $ids = $request->input('selected_ids', []);
         Memo::onlyTrashed()->whereIn('id_memo', $ids)->restore();
         Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'memo')->restore();
-        return redirect()->back()->with('success', 'Memo terpilih berhasil dipulihkan.');
+        return response()->json(['success' => true, 'message' => 'Memo berhasil dipulihkan.']);
     }
     public function forceDeleteMemo($id)
     {
@@ -155,30 +156,32 @@ class BackupController extends Controller
                 $b->delete();
             }
         } else {
-            return redirect()->route('memo.backup')->with('failure', 'Memo tidak ditemukan.');
+            return response()->json(['message' => 'Memo tidak ditemukan.'], 404);
         }
-        return redirect()->route('memo.backup')->with('success', 'Memo terpilih berhasil dihapus permanen.');
+        return response()->json(['success' => true, 'message' => 'Memo berhasil dihapus permanen.']);
     }
     public function bulkForceDeleteMemo(Request $request)
     {
         $ids = $request->input('selected_ids', []);
+
         Memo::onlyTrashed()->whereIn('id_memo', $ids)->forceDelete();
         Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'memo')->forceDelete();
         kategori_barang::whereIn('memo_id_memo', $ids)->delete();
-        return redirect()->back()->with('success', 'Memo terpilih berhasil dihapus permanen.');
+        return response()->json(['success' => true, 'message' => 'Memo terpilih berhasil dihapus permanen.']);
     }
 
 
     public function RestoreUndangan($id)
-    {   //dd($id);
+    {
         $undangan = Undangan::withTrashed()
             ->where('id_undangan', $id)
             ->first();
+
         $kirim_documents = Kirim_Document::withTrashed()
             ->where('id_document', $id)
             ->where('jenis_document', 'undangan')
             ->get();
-        
+
         if ($undangan) {
             $undangan->restore();
             foreach ($kirim_documents as $kirim_undangan) {
@@ -187,9 +190,9 @@ class BackupController extends Controller
         } else {
             dd($undangan);
         }
+
         return redirect()->route('undangan.backup')->with('success', 'Pemulihan Undangan Berhasil.');
     }
-
 
     public function forceDelete($id)
     {
@@ -198,6 +201,7 @@ class BackupController extends Controller
             ->where('id_document', $id)
             ->where('jenis_document', 'undangan')
             ->get();
+
         if ($undangan) {
             $undangan->forceDelete();
             foreach ($kirim_documents as $kirim_undangan) {
@@ -206,47 +210,185 @@ class BackupController extends Controller
         } else {
             return redirect()->route('undangan.backup')->with('failure', 'Undangan tidak ditemukan.');
         }
+
         return redirect()->route('undangan.backup')->with('success', 'Undangan berhasil dihapus permanen.');
     }
+
     public function bulkRestore(Request $request)
     {
-        $ids = $request->input('selected_ids', []);
-        Undangan::onlyTrashed()->whereIn('id_undangan', $ids)->restore();
-        Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'undangan')->restore();
-        return redirect()->back()->with('success', 'Pemulihan Undangan Berhasil.');
+        try {
+            $ids = $request->input('selected_ids', []);
+
+            if (empty($ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada undangan yang dipilih'
+                ], 400);
+            }
+
+            // Restore undangan
+            $restoredUndangan = Undangan::onlyTrashed()->whereIn('id_undangan', $ids)->restore();
+
+            // Restore related kirim documents
+            $restoredKirimDocs = Kirim_Document::onlyTrashed()
+                ->whereIn('id_document', $ids)
+                ->where('jenis_document', 'undangan')
+                ->restore();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Undangan berhasil dipulihkan',
+                'data' => [
+                    'restored_undangan' => $restoredUndangan,
+                    'restored_kirim_docs' => $restoredKirimDocs
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memulihkan undangan: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function bulkForceDelete(Request $request)
     {
-        $ids = $request->input('selected_ids', []);
-        Undangan::onlyTrashed()->whereIn('id_undangan', $ids)->forceDelete();
-        Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'undangan')->forceDelete();
-        return redirect()->back()->with('success', 'Undangan berhasil dihapus permanen.');
-    }
+        try {
+            $ids = $request->input('selected_ids', []);
 
+            if (empty($ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada undangan yang dipilih'
+                ], 400);
+            }
+
+            // Force delete undangan
+            $deletedUndangan = Undangan::onlyTrashed()->whereIn('id_undangan', $ids)->forceDelete();
+
+            // Force delete related kirim documents
+            $deletedKirimDocs = Kirim_Document::onlyTrashed()
+                ->whereIn('id_document', $ids)
+                ->where('jenis_document', 'undangan')
+                ->forceDelete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Undangan berhasil dihapus permanen',
+                'data' => [
+                    'deleted_undangan' => $deletedUndangan,
+                    'deleted_kirim_docs' => $deletedKirimDocs
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus undangan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
     public function bulkRestoreRisalah(Request $request)
     {
-        $ids = $request->input('selected_ids', []);
-        Risalah::onlyTrashed()->whereIn('id_risalah', $ids)->restore();
-        Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'risalah')->restore();
+        try {
+            $ids = $request->input('selected_ids', []);
 
-        return redirect()->back()->with('success_restore', 'Beberapa risalah berhasil dipulihkan.');
+            if (empty($ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada risalah yang dipilih'
+                ], 400);
+            }
+
+            // Restore risalah
+            $restoredRisalah = Risalah::onlyTrashed()->whereIn('id_risalah', $ids)->restore();
+
+            // Restore related kirim documents
+            $restoredKirimDocs = Kirim_Document::onlyTrashed()
+                ->whereIn('id_document', $ids)
+                ->where('jenis_document', 'risalah')
+                ->restore();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Risalah berhasil dipulihkan',
+                'data' => [
+                    'restored_risalah' => $restoredRisalah,
+                    'restored_kirim_docs' => $restoredKirimDocs
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memulihkan risalah: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function bulkForceDeleteRisalah(Request $request)
     {
-        $ids = $request->input('selected_ids', []);
-        Risalah::onlyTrashed()->whereIn('id_risalah', $ids)->forceDelete();
-        Kirim_Document::onlyTrashed()->whereIn('id_document', $ids)->where('jenis_document', 'risalah')->forceDelete();
+        try {
+            $ids = $request->input('selected_ids', []);
 
-        return redirect()->back()->with('success_delete', 'Risalah berhasil dihapus permanen.');
+            if (empty($ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada risalah yang dipilih'
+                ], 400);
+            }
+
+            // Cek apakah risalah yang akan dihapus ada
+            $risalah = Risalah::onlyTrashed()->whereIn('id_risalah', $ids)->get();
+
+            if ($risalah->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Risalah tidak ditemukan atau sudah dihapus permanen'
+                ], 404);
+            }
+
+            // Force delete risalah
+            $deletedRisalah = Risalah::onlyTrashed()->whereIn('id_risalah', $ids)->forceDelete();
+
+            // Force delete related kirim documents
+            $deletedKirimDocs = Kirim_Document::onlyTrashed()
+                ->whereIn('id_document', $ids)
+                ->where('jenis_document', 'risalah')
+                ->forceDelete();
+
+            return response()->json([
+                'success' => true,
+                'message' => count($ids) . ' risalah berhasil dihapus permanen',
+                'data' => [
+                    'deleted_risalah' => $deletedRisalah,
+                    'deleted_kirim_docs' => $deletedKirimDocs
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
-    public function forceDeleteRisalah($id)
+    public function forceDeleteRisalah($id, Request $request)
     {
-        Risalah::onlyTrashed()->where('id_risalah', $id)->forceDelete();
-        Kirim_Document::onlyTrashed()->where('id_document', $id)->where('jenis_document', 'risalah')->forceDelete();
+        // Pastikan model ditemukan
+        $risalah = Risalah::find($id);
 
-        return redirect()->back()->with('success_delete', 'Risalah berhasil dihapus permanen.');
+        if (!$risalah) {
+            return response()->json(['success' => false, 'message' => 'Dokumen tidak ditemukan']);
+        }
+
+        // Hapus risalah
+        $risalah->delete();
+
+        // Hapus juga relasi di kirim_document
+        Kirim_Document::where('id_document', $id)->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dokumen berhasil dihapus.'
+        ]);
     }
 }

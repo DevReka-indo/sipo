@@ -69,7 +69,7 @@ class Seri extends Model
             // Ambil nomor seri terakhir berdasarkan tahun & divisi
             $lastSeri = self::where('kode', $divisiId)
                 ->where('tahun', $currentYear)
-                ->latest()
+                ->latest('id_seri')
                 ->first();
 
             if (!$lastSeri) {

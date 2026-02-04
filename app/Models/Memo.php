@@ -30,11 +30,10 @@ class Memo extends Model
      *
      * @var array
      */
-    protected $fillable = [
-        'judul', 'tujuan', 'isi_memo', 'tgl_dibuat', 'tgl_disahkan', 'qr_approved_by', 'status','pembuat','catatan',
-        'nomor_memo', 'nama_bertandatangan', 'lampiran', 'divisi_id_divisi', 'seri_surat', 'kode', 'tujuan_string'
-
-    ];
+    protected $fillable = ['judul', 'tujuan', 'isi_memo', 'tgl_dibuat', 'tgl_disahkan',
+    'qr_approved_by', 'status', 'pembuat', 'catatan', 'nomor_memo',
+    'nama_bertandatangan', 'lampiran', 'divisi_id_divisi', 'seri_surat',
+    'kode', 'tujuan_string', 'feedback', 'tembusan', 'kode_bagian'];
 
     /**
      * Indicates if the model should be timestamped.
@@ -44,6 +43,7 @@ class Memo extends Model
     protected $casts = [
         'tgl_dibuat' => 'date',
         'tgl_disahkan' => 'date',
+        'deleted_at' => 'datetime',
     ];
 
     /**
@@ -52,6 +52,10 @@ class Memo extends Model
     public function divisi()
     {
         return $this->belongsTo(Divisi::class, 'divisi_id_divisi', 'id_divisi');
+    }
+    public function bagianKerja()
+    {
+        return $this->belongsTo(BagianKerja::class, 'kode_bagian', 'kode_bagian');
     }
     public function kategoriBarang()
     {
@@ -69,10 +73,17 @@ class Memo extends Model
     {
         return $this->belongsTo(User::class, 'pembuat', 'id');
     }
+    public function lampirans()
+    {
+        return $this->hasMany(Lampiran::class, 'memo_id');
+    }
 
+    // public function pembuatUser()
+    // {
+    //     return $this->belongsTo(User::class, 'pembuat', 'id');
+    // }
 
     /**
      * Get the document associated with the memo.
      */
-
 }

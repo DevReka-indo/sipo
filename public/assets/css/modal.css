@@ -1,0 +1,27 @@
+.swal2-actions.swal2-actions-custom {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 12px !important;
+    width: 100%;
+    margin-top: 16px;
+  }
+  /* Samakan ukuran tombol agar konsisten */
+  .swal2-actions.swal2-actions-custom .btn {
+    min-width: 110px;
+    border-radius: .5rem;
+    font-weight: 600;
+  }
+
+  .swal2-actions-custom { display:flex; justify-content:center; gap:12px; }
+  .swal2-cancel.btn-warning {
+    background-color:#6c757d !important;
+    border-color:#6c757d !important;
+    color:#ffff !important;
+  }
+  .swal2-cancel.btn-warning:hover {
+    filter: brightness(0.95);
+  }
+  
+
+
+

@@ -3,125 +3,91 @@
 // internal API
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\MemoController;
-use App\Http\Controllers\Api\ArsipApiController;
-use App\Http\Controllers\Api\NotifikasiController;
+use App\Http\Controllers\MemoController;
 use App\Http\Controllers\Api\MemoApiController;
 use App\Http\Controllers\Api\UndanganApiController;
+use App\Http\Controllers\Api\DashboardApiController;
 use App\Http\Controllers\Api\RisalahApiController;
-use App\Http\Controllers\Api\KirimApiController;
-use App\Http\Controllers\Api\UserManageApiController;
-use App\Http\Controllers\Api\PerusahaanApiController;
-use App\Http\Controllers\Api\LaporanApiController;
+use App\Http\Controllers\Api\AuthApiController;
+use App\Http\Controllers\Api\NotifApiController;
 use App\Http\Controllers\Api\ProfileApiController;
+use Illuminate\Support\Facades\Http;
 
 // eksternal API
 use App\Http\Controllers\CetakPDFController;
 
-// Public routes
+Route::get('/status', function () {
+    return response()->json([
+        'success' => true,
+        'message' => 'API SIPO is running 🚀',
+    ]);
+});
 
-Route::post('/login', [AuthController::class, 'login']);
+Route::get('/version', function () {
+    return response()->json([
+        'version' => '1.0.1',
+        'framework' => 'Laravel 12',
+    ]);
+});
 
-// Protected routes
+Route::post('/login', [AuthApiController::class, 'login']);
+Route::post('/logout', [AuthApiController::class, 'logout'])->middleware('auth:sanctum');
+
+Route::get('/tesnotif', [NotifApiController::class, 'tesNotif']);
+Route::post('/save-token-manual', [NotifApiController::class, 'saveTokenManual']);
+// Route::get('/tesnotif', function() {
+//     $token = 'ExponentPushToken[UJfuJXJLKsqDoZ8WOvpAeu]'; // token dari app user
+//     $response = Http::post('https://exp.host/--/api/v2/push/send', [
+//         'to' => $token,
+//         'title' => 'Tes FCM dari Laravel 🚀',
+//         'body' => 'Jika ini muncul di aplikasi SIPO, berarti FCM sudah nyambung!',
+//         'sound' => 'default',
+//     ]);
+//     return $response->json();
+// });
+
+
+Route::get('/memos/{id}/lampiran/downloadAll', [MemoController::class, 'downloadAll'])->name('api.memo.lampiran.downloadAll');
+
 Route::middleware('auth:sanctum')->group(function () {
-   // validasi token
-    Route::get('/checkToken', [AuthController::class, 'checkToken']);
+    Route::get('/memos', [MemoApiController::class, 'index']);
+    Route::get('/memos/kode', [MemoApiController::class, 'kodeFilter']);
+    Route::get('/memos/{id}', [MemoApiController::class, 'show']);
+    Route::get('/users', [App\Http\Controllers\Api\UserManageApiController::class, 'index']);
 
-    // Roles
-    Route::get('/roles', [UserController::class, 'showRole']);
+    // Endpoint lampiran utama (cek single / multiple)
+    Route::get('/memos/{id}/lampiran', [MemoController::class, 'lampiran'])->name('api.memo.lampiran');
+    // Route::get('/memos/{id}/lampiran/downloadAll', [MemoController::class, 'downloadAll'])->name('api.memo.lampiran.downloadAll');
+    // Endpoint untuk akses lampiran tertentu kalau multiple
+    Route::get('/memos/{id}/lampiran/{index}', [MemoController::class, 'lampiranSingle'])->name('api.memo.lampiran.single');
+    Route::put('/memos/{id}/update-status', [MemoApiController::class, 'updateStatus'])->name('api.memo.updateStatus');
+    Route::get('/memos/{id}/pdf', [CetakPDFController::class, 'viewMemoPdfUrl']);
 
-    // Profil Pengguna
+    Route::get('/risalahs', [RisalahApiController::class, 'index']);
+    Route::get('/risalahs/kode', [RisalahApiController::class, 'kodeFilter']);
+    Route::get('/risalahs/{id}', [RisalahApiController::class, 'show']);
+    Route::get('/risalahs/{id}/lampiran', [RisalahApiController::class, 'lampiran'])->name('api.risalah.lampiran');
+    Route::get('/risalahs/{id}/lampiran/{index}', [RisalahApiController::class, 'lampiranSingle'])->name('api.risalah.lampiran.single');
+    Route::put('/risalahs/{id}/update-status', [RisalahApiController::class, 'updateStatus'])->name('api.risalah.updateStatus');
+    Route::get('/risalahs/{id}/pdf', [CetakPDFController::class, 'viewRisalahPdfUrl']);
+
+    Route::get('/undangans', [UndanganApiController::class, 'index']);
+    Route::get('/undangans/kode', [UndanganApiController::class, 'kodeFilter']);
+    Route::get('/undangans/{id}', [UndanganApiController::class, 'show']);
+    Route::get('/undangans/{id}/lampiran', [UndanganApiController::class, 'lampiran'])->name('api.undangan.lampiran');
+    Route::get('/undangans/{id}/lampiran/{index}', [UndanganApiController::class, 'lampiranSingle'])->name('api.undangan.lampiran.single');
+    Route::put('/undangans/{id}/update-status', [UndanganApiController::class, 'updateStatus'])->name('api.undangan.updateStatus');
+    Route::get('/undangans/{id}/pdf', [CetakPDFController::class, 'viewUndanganPdfUrl']);
+
     Route::get('/profile', [ProfileApiController::class, 'profileDetails']);
 
-    // User Manage
-    Route::get('/users', [UserManageApiController::class, 'index']);
-    Route::delete('delete/user/{id}', [UserManageApiController::class, 'destroy']);
-
-    // Memo
-    Route::get('/memo', [MemoApiController::class, 'index']);
-    Route::get('/memo/superadmin', [MemoApiController::class, 'superadmin']);
-    Route::get('/memo/manager', [MemoApiController::class, 'manager']);
-    Route::delete('/memo/{id}', [MemoApiController::class, 'destroy']);
-    Route::put('/memo/updateStatus/{id}', [MemoApiController::class, 'updateStatus']);
-    Route::get('/memo-admin-b', [MemoApiController::class, 'getPendingForAdminB']);
-    Route::get('/memo/{id}', [MemoApiController::class, 'show']);
-    Route::get('memo/view-pdf/{id_memo}', [MemoApiController::class, 'ViewMemoPDF']);
-    Route::get('/preview/memo/{id_memo}', [CetakPDFController::class, 'viewmemoPDF']);
-
-   // Undangan
-    Route::get('/undangan', [UndanganApiController::class, 'index']);
-    Route::get('/undangan/superadmin', [UndanganApiController::class, 'superadmin']);
-    Route::get('/undangan/manager', [KirimApiController::class, 'Undangan']);
-    Route::put('/undangan/updateStatus/{id}', [UndanganApiController::class, 'updateDocumentStatus']);
-    Route::delete('/undangan/{id}', [UndanganApiController::class, 'destroy']);
-    Route::get('undangan/view-pdf/{id}', [UndanganApiController::class, 'ViewUndanganPDF']);
-    Route::get('/preview/undangan/{id_undangan}', [CetakPDFController::class, 'viewundanganPDF']);
-
-
-    // Kirim Dokumen
-        Route::get('/kirim/{id}', [KirimApiController::class, 'index']);
-    // Mengambil data undangan di manager yg sudah dikirim
-        Route::get('/kirim/manager/{id}', [KirimApiController::class, 'viewManager']);
-    // Untuk mengirim dokumen via API (POST)
-        Route::post('/kirim/send', [KirimApiController::class, 'sendDocument']);
-    // routes/api.php
-    
-
-    // User Manage
-        Route::get('/users', [UserManageApiController::class, 'index']);
-        Route::delete('delete/user/{id}', [UserManageApiController::class, 'destroy']);
-
-    // Dashboard    
-    Route::get('/dashboard/jumlahMemo', [MemoApiController::class, 'jumlahMemo']);
-    Route::get('/dashboard/jumlahUndangan', [UndanganApiController::class, 'jumlahUndangan']);
-    Route::get('/dashboard/jumlahRisalah', [RisalahApiController::class, 'jumlahRisalah']);
-
-
-    // Risalah
-    Route::get('/risalah', [RisalahApiController::class, 'index']);
-    Route::get('/risalah/superadmin', [RisalahApiController::class, 'superadmin']);
-    Route::get('/risalah/manager', [KirimApiController::class, 'Risalah']);
-    Route::delete('/risalah/{id}', [RisalahApiController::class, 'destroy']);
-    Route::put('/risalah/updateStatus/{id}', [RisalahApiController::class, 'updateStatus']);
-    Route::get('risalah/view-pdf/{id_risalah}', [RisalahApiController::class, 'ViewRisalahPDF']);
-    Route::get('/preview/risalah/{id_risalah}', [CetakPDFController::class, 'viewrisalahPDF']);
-    Route::get('/detail/risalah/{id_risalah}', [RisalahApiController::class, 'show']);
-
-    // Notifikasi
-    Route::get('/', [NotifikasiController::class, 'index']);
-    Route::put('/{id}/read', [NotifikasiController::class, 'markAsRead']);
-    Route::put('/read-all', [NotifikasiController::class, 'markAllAsRead']);
-    Route::get('/unread-count', [NotifikasiController::class, 'unreadCount']);
-
-    // Data Perusahaan
-    Route::get('/perusahaan', [PerusahaanApiController::class, 'index']);
-
-    // Laporan
-    Route::get('/laporan/getMemos', [LaporanApiController::class, 'getMemos']);
-    Route::get('/laporan/getUndangans', [LaporanApiController::class, 'getUndangans']);
-    Route::get('/laporan/getRisalahs', [LaporanApiController::class, 'getRisalahs']);
-
-    // Notifikasi
     Route::get('/notifikasi', [NotifApiController::class, 'index']);
-    Route::get('/notifikasi/unread-count', [NotifApiController::class, 'getUnreadCount']);
-    Route::post('/notifikasi/mark-all-read', [NotifApiController::class, 'markAllAsRead']);
+    Route::get('/notifikasi/status', [NotifApiController::class, 'notifAvailable']);
+    Route::post('/notifikasi/token', [NotifApiController::class, 'saveToken']);
+    Route::post('/notifikasi/{id}/read', [NotifApiController::class, 'markAsRead']);
+    Route::post('/notifikasi/read-all', [NotifApiController::class, 'markAllAsRead']);
 
-    //Arsip
-    Route::prefix('arsip')->group(function () {
-        Route::get('/', [ArsipApiController::class, 'index']);              // Ambil daftar dokumen terarsip
-        Route::post('/', [ArsipApiController::class, 'store']);             // Arsipkan dokumen
-        Route::post('/restore', [ArsipApiController::class, 'restore']);    // Unarsipkan dokumen
-        Route::get('/undangan', [ArsipApiController::class, 'indexUndangan']);
-        Route::get('/memo', [ArsipApiController::class, 'indexMemo']);
-        Route::get('/risalah', [ArsipApiController::class, 'indexRisalah']);
+    Route::get('/dashboard', [DashboardApiController::class, 'index']);
 
-    });
-
-    Route::prefix('auth')->group(function () {
-        Route::post('/forgot-password', [ForgotPwApiController::class, 'sendVerificationCode']);
-        Route::post('/verify-code', [ForgotPwApiController::class, 'verifyCode']);
-        Route::post('/reset-password', [ForgotPwApiController::class, 'resetPassword']);
-    });
+    Route::get('/approval', [App\Http\Controllers\Api\ApprovalApiController::class, 'index']);
 });

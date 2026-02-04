@@ -13,20 +13,32 @@ use App\Models\Department;
 use App\Models\Director;
 use App\Models\Backup_Document;
 use App\Models\Kirim_Document;
+use App\Models\Memo;
 use App\Models\Section;
 use App\Models\Unit;
 use App\Http\Controllers\CetakPDFController;
+use App\Http\Controllers\Api\NotifApiController;
 use Illuminate\Support\Facades\Validator;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use App\Services\QrCodeService;
+use App\Models\BagianKerja;
 
 
 use Illuminate\Http\Request;
 
 class UndanganController extends Controller
 {
+
+    //protected $qrCodeService;
+
+    //public function __construct(QrCodeService $qrCodeService)
+    //{
+    //    $this->qrCodeService = $qrCodeService;
+    //}
+
     public function index(Request $request)
     {
         $seri = Seri::all();
@@ -38,7 +50,8 @@ class UndanganController extends Controller
             ->pluck('document_id')
             ->toArray();
 
-        $sortBy = $request->get('sort_by', 'tgl_rapat_diff');
+        // $sortBy = $request->get('sort_by', 'tgl_rapat_diff');
+        $sortBy = $request->get('sort_by', 'created_at');
         $sortDirection = $request->get('sort_direction', 'asc') === 'asc' ? 'asc' : 'desc';
 
         $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_undangan', 'judul', 'tgl_rapat_diff'];
@@ -92,30 +105,48 @@ class UndanganController extends Controller
         }
 
         if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
-            $query->whereBetween('tgl_dibuat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
+            $query->whereBetween('tgl_rapat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
         } elseif ($request->filled('tgl_dibuat_awal')) {
-            $query->whereDate('tgl_dibuat', '>=', $request->tgl_dibuat_awal);
+            $query->whereDate('tgl_rapat', '>=', $request->tgl_dibuat_awal);
         } elseif ($request->filled('tgl_dibuat_akhir')) {
-            $query->whereDate('tgl_dibuat', '<=', $request->tgl_dibuat_akhir);
+            $query->whereDate('tgl_rapat', '<=', $request->tgl_dibuat_akhir);
         }
 
-        if ($request->has('search') && $request->search != '') {
+        if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('judul', 'like', '%' . $request->search . '%')
                     ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
             });
         }
+        $kode = $query->whereNotNull('kode')
+            ->pluck('kode')
+            ->filter()
+            ->unique()
+            ->values();
 
         $perPage = $request->get('per_page', 10);
         $undangans = $query->paginate($perPage);
 
-        $undangans->getCollection()->transform(function ($undangan) use ($userId) {
-            $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
-                ->where('jenis_document', 'undangan')
-                ->where('id_penerima', $userId)
-                ->first();
+        // $undangans->getCollection()->transform(function ($undangan) use ($userId) {
+        //     $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
+        //         ->where('jenis_document', 'undangan')
+        //         ->where('id_penerima', $userId)
+        //         ->first();
 
-            $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+        //     $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+        //     return $undangan;
+        // });
+
+        $undangans->getCollection()->transform(function ($undangan) use ($userId) {
+            $creator = $undangan->pembuat;
+            if ($creator == $userId) {
+                $undangan->final_status = $undangan->status;
+                $undangan->jenis = 'keluar';
+            } else {
+                $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)->where('jenis_document', 'undangan')->where('id_penerima', $userId)->first();
+                $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+                $undangan->jenis = 'masuk';
+            }
             return $undangan;
         });
 
@@ -125,8 +156,181 @@ class UndanganController extends Controller
                     ->orWhere('id_penerima', $userId);
             })->get();
 
-        return view(Auth::user()->role->nm_role . '.undangan.undangan', compact('undangans', 'seri', 'sortDirection', 'kirimDocuments'));
+        return view(Auth::user()->role->nm_role . '.undangan.index', compact('undangans', 'kode', 'seri', 'sortDirection', 'kirimDocuments'));
     }
+
+    /**
+     * Undangan Terkirim for logged in user (hanya undangan di mana id_pengirim == auth user)
+     */
+    public function undanganTerkirim(Request $request)
+    {
+        $seri = Seri::all();
+        $userId = Auth::id();
+
+        // Ambil undangan yang sudah diarsipkan oleh user login
+        $undanganDiarsipkan = Arsip::where('user_id', $userId)
+            ->where('jenis_document', 'App\\Models\\Undangan')
+            ->pluck('document_id')
+            ->toArray();
+
+        $sortBy = $request->get('sort_by', 'tgl_rapat_diff');
+        $sortDirection = $request->get('sort_direction', 'asc') === 'asc' ? 'asc' : 'desc';
+
+        $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_undangan', 'judul', 'tgl_rapat_diff'];
+        if (!in_array($sortBy, $allowedSortColumns)) {
+            $sortBy = 'tgl_rapat_diff';
+        }
+
+        $query = Undangan::whereNotIn('id_undangan', $undanganDiarsipkan)
+            ->whereHas('kirimDocument', function ($q) use ($userId) {
+                $q->where('id_pengirim', $userId)->where('jenis_document', 'undangan');
+            });
+
+        // Filter tambahan
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
+            $query->whereBetween('tgl_rapat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
+        } elseif ($request->filled('tgl_dibuat_awal')) {
+            $query->whereDate('tgl_rapat', '>=', $request->tgl_dibuat_awal);
+        } elseif ($request->filled('tgl_dibuat_akhir')) {
+            $query->whereDate('tgl_rapat', '<=', $request->tgl_dibuat_akhir);
+        }
+
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('judul', 'like', '%' . $request->search . '%')
+                    ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
+            });
+        }
+
+        $kode = $query->whereNotNull('kode')->pluck('kode')->filter()->unique()->values();
+
+        // Urutan
+        if ($sortBy === 'tgl_rapat_diff') {
+            $query->whereNotNull('tgl_rapat')
+                ->orderByRaw("
+                    CASE
+                        WHEN DATEDIFF(tgl_rapat, CURDATE()) < 0 THEN 1
+                        ELSE 0
+                    END ASC
+                ")
+                ->orderByRaw("ABS(DATEDIFF(tgl_rapat, CURDATE())) $sortDirection");
+        } else {
+            $query->orderBy($sortBy, $sortDirection);
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $undangans = $query->paginate($perPage);
+
+        $undangans->getCollection()->transform(function ($undangan) use ($userId) {
+            $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
+                ->where('jenis_document', 'undangan')
+                ->where(function ($q) use ($userId) {
+                    $q->where('id_pengirim', $userId)->orWhere('id_penerima', $userId);
+                })
+                ->first();
+
+            $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+            return $undangan;
+        });
+
+        $kirimDocuments = Kirim_Document::where('jenis_document', 'undangan')
+            ->where(function ($q) use ($userId) {
+                $q->where('id_pengirim', $userId)->orWhere('id_penerima', $userId);
+            })->get();
+
+        return view(Auth::user()->role->nm_role . '.undangan.undangan-terkirim', compact('undangans', 'seri', 'sortDirection', 'kirimDocuments', 'kode'));
+    }
+
+    /**
+     * Undangan Diterima for logged in user (hanya undangan di mana id_penerima == auth user)
+     */
+    public function undanganDiterima(Request $request)
+    {
+        $seri = Seri::all();
+        $userId = Auth::id();
+        // Ambil undangan yang sudah diarsipkan oleh user login
+        $undanganDiarsipkan = Arsip::where('user_id', $userId)
+            ->where('jenis_document', 'App\\Models\\Undangan')
+            ->pluck('document_id')
+            ->toArray();
+
+        $sortBy = $request->get('sort_by', 'tgl_rapat_diff');
+        $sortDirection = $request->get('sort_direction', 'asc') === 'asc' ? 'asc' : 'desc';
+
+        $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_undangan', 'judul', 'tgl_rapat_diff'];
+        if (!in_array($sortBy, $allowedSortColumns)) {
+            $sortBy = 'tgl_rapat_diff';
+        }
+
+        $query = Undangan::whereNotIn('id_undangan', $undanganDiarsipkan)
+            ->whereHas('kirimDocument', function ($q) use ($userId) {
+                $q->where('id_penerima', $userId)->where('jenis_document', 'undangan');
+            });
+
+
+        // Filter tambahan
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
+            $query->whereBetween('tgl_rapat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
+        } elseif ($request->filled('tgl_dibuat_awal')) {
+            $query->whereDate('tgl_rapat', '>=', $request->tgl_dibuat_awal);
+        } elseif ($request->filled('tgl_dibuat_akhir')) {
+            $query->whereDate('tgl_rapat', '<=', $request->tgl_dibuat_akhir);
+        }
+
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('judul', 'like', '%' . $request->search . '%')
+                    ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
+            });
+        }
+
+        $kode = $query->whereNotNull('kode')->pluck('kode')->filter()->unique()->values();
+
+        // Urutan
+        if ($sortBy === 'tgl_rapat_diff') {
+            $query->whereNotNull('tgl_rapat')
+                ->orderByRaw("
+                    CASE
+                        WHEN DATEDIFF(tgl_rapat, CURDATE()) < 0 THEN 1
+                        ELSE 0
+                    END ASC
+                ")
+                ->orderByRaw("ABS(DATEDIFF(tgl_rapat, CURDATE())) $sortDirection");
+        } else {
+            $query->orderBy($sortBy, $sortDirection);
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $undangans = $query->paginate($perPage);
+
+        $undangans->getCollection()->transform(function ($undangan) use ($userId) {
+            $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
+                ->where('jenis_document', 'undangan')
+                ->where(function ($q) use ($userId) {
+                    $q->where('id_pengirim', $userId)->orWhere('id_penerima', $userId);
+                })
+                ->first();
+
+            $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+            return $undangan;
+        });
+
+        $kirimDocuments = Kirim_Document::where('jenis_document', 'undangan')
+            ->where(function ($q) use ($userId) {
+                $q->where('id_pengirim', $userId)->orWhere('id_penerima', $userId);
+            })->get();
+        return view(Auth::user()->role->nm_role . '.undangan.undangan-diterima', compact('undangans', 'seri', 'sortDirection', 'kirimDocuments', 'kode'));
+    }
+
+
 
     public function superadmin(Request $request)
     {   //dd('Superadmin Undangan');
@@ -139,7 +343,7 @@ class UndanganController extends Controller
         $userId = Auth::id();
 
 
-        $undanganDiarsipkan = Arsip::where('user_id', Auth::id())->pluck('document_id')->toArray();
+        $undanganDiarsipkan = Arsip::where('user_id', Auth::id())->where('jenis_document', 'App\Models\Undangan')->pluck('document_id')->toArray();
         $sortBy = $request->get('sort_by', 'created_at'); // default ke created_at
         $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
 
@@ -185,6 +389,7 @@ class UndanganController extends Controller
                     ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
             });
         }
+        //dd($request->all(), $query->toSql(), $query->getBindings());
         $perPage = $request->get('per_page', 10); // Default ke 10 jika tidak ada input
         $undangans = $query->paginate($perPage);
 
@@ -193,13 +398,62 @@ class UndanganController extends Controller
     }
 
 
+    // public function nextSeri()
+    // {
+    //     $user = Auth::user();
+    //     if ($user->position_id_position == 1) {
+    //         $idDirektur = Director::where('id_director', $user->director_id_director)->first();
+    //         $kodeDirektur = $idDirektur->kode_director;
+    //     } else {
+    //         $kodeDirektur = '';
+    //     }
+    //     // dd($user);
+
+    //     $divDeptKode = $this->getDivDeptKode($user);
+
+    //     // Ambil nomor seri berikutnya
+    //     $nextSeri = Seri::getNextSeri(false);
+    //     // Konversi bulan ke angka Romawi
+    //     $bulanRomawi = $this->convertToRoman(now()->month);
+    //     // Format nomor dokumen
+    //     $nomorDokumen = sprintf(
+    //         "%02d.%02d/REKA%s/GEN/%s/%s/%d",
+    //         $nextSeri['seri_tahunan'],
+    //         $nextSeri['seri_bulanan'],
+    //         strtoupper($kodeDirektur),
+    //         strtoupper($divDeptKode),
+    //         $bulanRomawi,
+    //         now()->year
+    //     );
+
+    //     return $nomorDokumen;
+    // }
+
+    public function nextSeri(Request $request)
+    {
+        // Validasi input seri dan nomor surat manual
+        $request->validate([
+            'seri_surat' => 'required|string|max:50',
+            'nomor_surat' => 'required|string|max:100',
+        ], [
+            'seri_surat.required' => 'Seri surat wajib diisi.',
+            'nomor_surat.required' => 'Nomor surat wajib diisi.',
+        ]);
+
+        // Ambil input dari user
+        $seriSurat = $request->input('seri_surat');
+        $nomorMemo = $request->input('nomor_Memo');
+
+        // Kembalikan hasilnya agar bisa dipakai di tempat lain
+        return [
+            'seri_surat' => $seriSurat,
+            'nomor_Memo' => $nomorMemo,
+        ];
+    }
+
 
     public function create()
     {
-
-        $orgTree = $this->getOrgTreeWithUsers();
-        $jsTreeData = $this->convertToJsTree($orgTree);
-
 
         $divisiList = Divisi::all();
 
@@ -216,16 +470,18 @@ class UndanganController extends Controller
 
         $divDeptKode = $this->getDivDeptKode($user);
 
+        // Daftar bagian kerja
+        $bagianKerja = BagianKerja::orderBy('kode_bagian')->get();
+
         // Ambil nomor seri berikutnya
         $nextSeri = Seri::getNextSeri(false);
         // Konversi bulan ke angka Romawi
         $bulanRomawi = $this->convertToRoman(now()->month);
         // Format nomor dokumen
         $nomorDokumen = sprintf(
-            "%d.%d/REKA/GEN/%s/%s/%d",
+            "%02d.%02d/REKA/GEN/%s/%s/%d",
             $nextSeri['seri_tahunan'],
             $nextSeri['seri_bulanan'],
-            // strtoupper($kodeDirektur),
             strtoupper($divDeptKode),
             $bulanRomawi,
             now()->year
@@ -238,6 +494,7 @@ class UndanganController extends Controller
         if ($user->position_id_position !== 1) {
             $managers = User::with('position:id_position,nm_position')
                 ->where('role_id_role', 3)
+                ->where('position_id_position', '!=', 9)
                 ->where(function ($q) use ($user) {
                     $q->where(function ($q2) use ($user) {
                         $q2->whereNotNull('divisi_id_divisi')
@@ -260,27 +517,27 @@ class UndanganController extends Controller
                     ->find($user->id, ['id', 'firstname', 'lastname', 'position_id_position'])
             ]);
 
-
-
-
         // Ambil seluruh user dan struktur organisasi (untuk dropdown tree)
         $users = User::select('id', 'firstname', 'lastname', 'divisi_id_divisi', 'department_id_department', 'section_id_section', 'unit_id_unit')->get();
         // Struktur organisasi tree (harus dibuat di backend, contoh dummy di bawah)
         $orgTree = $this->getOrgTreeWithUsers();
-        $mainDirector = $orgTree[0] ?? null; // assuming the first node is the main director
-        //dd($jsTreeData);
+        $jsTreeData = $this->convertToJsTree($orgTree);
 
-        return view(Auth::user()->role->nm_role . '.undangan.add-undangan', [
+        $mainDirector = $orgTree[0] ?? null; // assuming the first node is the main director
+        // dd($orgTree, $jsTreeData);
+
+        return view(Auth::user()->role->nm_role . '.undangan.add-coba', [
             'nomorSeriTahunan' => $nextSeri['seri_tahunan'],
             'nomorDokumen' => $nomorDokumen,
             'kode' => $divDeptKode,
+            'kode_bagian' => $bagianKerja,
             'managers' => $managers,
             'divisiList' => $divisiList,
             'users' => $users,
             'orgTree' => $orgTree,
             'jsTreeData' => $jsTreeData,
             'mainDirector' => $mainDirector
-        ]);
+        ], compact('bagianKerja'));
     }
 
     //PRIVATE FUNCTIONS UNTUK BUAT TREE TUJUAN[]
@@ -370,145 +627,160 @@ class UndanganController extends Controller
     private function convertToJsTree($tree)
     {
         $result = [];
+
+
         foreach ($tree as $director) {
             $dirNode = [
-                'id' => 'director-' . $director['id_director'],
-                'text' => $director['name_director'],
+                'id' => 'director-' . ($director['id_director'] ?? ''),
+                'text' => $director['name_director'] ?? 'Director',
                 'children' => []
             ];
 
-            $usersAtDirector = $this->filterUsersAtLevel($director['users'], 'director');
+            // users at director
+            $usersAtDirector = $this->filterUsersAtLevel($director['users'] ?? [], 'director');
             foreach ($usersAtDirector as $user) {
                 $dirNode['children'][] = [
                     'id' => 'user-' . $user['id'],
-                    'text' => $this->getUserText($user, ['director' => $director['name_director']]),
+                    'text' => $this->getUserText($user, ['director' => $dirNode['text']]),
                     'icon' => 'fa fa-user'
+                ];
+            }
+            $addedDepartments = [];
 
+            foreach ($director['divisi'] ?? [] as $divisi) {
+                $divName = $divisi['nm_divisi'] ?? ($divisi['name_divisi'] ?? 'Divisi');
+                $divNode = [
+                    'id' => 'divisi-' . ($divisi['id_divisi'] ?? ''),
+                    'text' => $divName,
+                    'children' => []
+                ];
+
+                // divisi users
+                $usersAtDivisi = $this->filterUsersAtLevel($divisi['users'] ?? [], 'divisi');
+                foreach ($usersAtDivisi as $user) {
+                    $divNode['children'][] = [
+                        'id' => 'user-' . $user['id'],
+                        'text' => $this->getUserText($user, [
+                            'director' => $dirNode['text'],
+                            'divisi' => $divName
+                        ]),
+                        'icon' => 'fa fa-user'
+                    ];
+                }
+
+                // departments inside divisi
+                foreach ($divisi['department'] ?? [] as $dept) {
+                    $deptId = $dept['id_department'] ?? null;
+                    if (!$deptId || in_array($deptId, $addedDepartments)) {
+                        continue; // skip duplicates
+                    }
+
+                    $divNode['children'][] = $this->buildDeptNode($dept, [
+                        'director' => $dirNode['text'],
+                        'divisi' => $divName
+                    ]);
+                    $addedDepartments[] = $deptId;
+                }
+
+                $dirNode['children'][] = $divNode;
+            }
+
+            // 1) Always add departments directly under the director (if any)
+            foreach ($director['department'] ?? [] as $dept) {
+                $deptId = $dept['id_department'] ?? null;
+                if (!$deptId || in_array($deptId, $addedDepartments)) {
+                    continue; // skip duplicates
+                }
+                $dirNode['children'][] = $this->buildDeptNode($dept, [
+                    'director' => $dirNode['text']
+                ]);
+                $addedDepartments[] = $deptId;
+            }
+
+            // 2) Then add divisions (if any) and their departments
+
+
+            $result[] = $dirNode;
+        }
+
+        return json_encode($result);
+    }
+
+    /**
+     * Helper: build department -> sections -> units -> users
+     * $ctx is an array containing names to include in user text (director/divisi/etc).
+     */
+    private function buildDeptNode(array $dept, array $ctx = [])
+    {
+        $deptName = $dept['name_department'] ?? ($dept['nm_department'] ?? 'Department');
+        $deptNode = [
+            'id' => 'dept-' . ($dept['id_department'] ?? ''),
+            'text' => $deptName,
+            'children' => []
+        ];
+
+        // users at department
+        $usersAtDepartment = $this->filterUsersAtLevel($dept['users'] ?? [], 'department');
+        foreach ($usersAtDepartment as $user) {
+            $deptNode['children'][] = [
+                'id' => 'user-' . $user['id'],
+                'text' => $this->getUserText($user, array_merge($ctx, ['department' => $deptName])),
+                'icon' => 'fa fa-user'
+            ];
+        }
+
+        // sections -> units
+        foreach ($dept['section'] ?? [] as $section) {
+            $sectionName = $section['name_section'] ?? 'Section';
+            $sectionNode = [
+                'id' => 'section-' . ($section['id_section'] ?? ''),
+                'text' => $sectionName,
+                'children' => []
+            ];
+
+            $usersAtSection = $this->filterUsersAtLevel($section['users'] ?? [], 'section');
+            foreach ($usersAtSection as $user) {
+                $sectionNode['children'][] = [
+                    'id' => 'user-' . $user['id'],
+                    'text' => $this->getUserText($user, array_merge($ctx, [
+                        'department' => $deptName,
+                        'section' => $sectionName
+                    ])),
+                    'icon' => 'fa fa-user'
                 ];
             }
 
-            if (empty($director['divisi'])) {
-                foreach ($director['department'] ?? [] as $dept) {
-                    $deptNode = ['id' => 'dept-' . $dept['id_department'], 'text' => $dept['name_department'], 'children' => []];
-                    $usersAtDepartment = $this->filterUsersAtLevel($dept['users'] ?? [], 'department');
-                    foreach ($usersAtDepartment as $user) {
-                        $deptNode['children'][] = [
-                            'id' => 'user-' . $user['id'],
-                            'text' => $this->getUserText($user, [
-                                'director' => $director['name_director'],
-                                'department' => $dept['name_department']
-                            ]),
-                            'icon' => 'fa fa-user'
-                        ];
-                    }
-                    foreach ($dept['section'] ?? [] as $section) {
-                        $sectionNode = ['id' => 'section-' . $section['id_section'], 'text' => $section['name_section'], 'children' => []];
-                        $usersAtSection = $this->filterUsersAtLevel($section['users'] ?? [], 'section');
-                        foreach ($usersAtSection as $user) {
-                            $sectionNode['children'][] = [
-                                'id' => 'user-' . $user['id'],
-                                'text' => $this->getUserText($user, [
-                                    'director' => $director['name_director'],
-                                    'department' => $dept['name_department'],
-                                    'section' => $section['name_section']
-                                ]),
-                                'icon' => 'fa fa-user'
-                            ];
-                        }
-                        foreach ($section['unit'] ?? [] as $unit) {
-                            $unitNode = ['id' => 'unit-' . $unit['id_unit'], 'text' => $unit['name_unit'], 'children' => []];
-                            $usersAtUnit = $this->filterUsersAtLevel($unit['users'] ?? [], 'unit');
-                            foreach ($usersAtUnit as $user) {
-                                $unitNode['children'][] = [
-                                    'id' => 'user-' . $user['id'],
-                                    'text' => $this->getUserText($user, [
-                                        'director' => $director['name_director'],
-                                        'department' => $dept['name_department'],
-                                        'section' => $section['name_section'],
-                                        'unit' => $unit['name_unit']
-                                    ]),
-                                    'icon' => 'fa fa-user'
-                                ];
-                            }
-                            $sectionNode['children'][] = $unitNode;
-                        }
-                        $deptNode['children'][] = $sectionNode;
-                    }
-                    $dirNode['children'][] = $deptNode;
+            foreach ($section['unit'] ?? [] as $unit) {
+                $unitName = $unit['name_unit'] ?? 'Unit';
+                $unitNode = [
+                    'id' => 'unit-' . ($unit['id_unit'] ?? ''),
+                    'text' => $unitName,
+                    'children' => []
+                ];
+
+                $usersAtUnit = $this->filterUsersAtLevel($unit['users'] ?? [], 'unit');
+                foreach ($usersAtUnit as $user) {
+                    $unitNode['children'][] = [
+                        'id' => 'user-' . $user['id'],
+                        'text' => $this->getUserText($user, array_merge($ctx, [
+                            'department' => $deptName,
+                            'section' => $sectionName,
+                            'unit' => $unitName
+                        ])),
+                        'icon' => 'fa fa-user'
+                    ];
                 }
-            } else {
-                foreach ($director['divisi'] ?? [] as $divisi) {
-                    $divNode = ['id' => 'divisi-' . $divisi['id_divisi'], 'text' => $divisi['nm_divisi'], 'children' => []];
-                    $usersAtDivisi = $this->filterUsersAtLevel($divisi['users'] ?? [], 'divisi');
-                    foreach ($usersAtDivisi as $user) {
-                        $divNode['children'][] = [
-                            'id' => 'user-' . $user['id'],
-                            'text' => $this->getUserText($user, [
-                                'director' => $director['name_director'],
-                                'divisi' => $divisi['nm_divisi']
-                            ]),
-                            'icon' => 'fa fa-user'
-                        ];
-                    }
-                    foreach ($divisi['department'] ?? [] as $dept) {
-                        $deptNode = ['id' => 'dept-' . $dept['id_department'], 'text' => $dept['name_department'], 'children' => []];
-                        $usersAtDepartment = $this->filterUsersAtLevel($dept['users'] ?? [], 'department');
-                        foreach ($usersAtDepartment as $user) {
-                            $deptNode['children'][] = [
-                                'id' => 'user-' . $user['id'],
-                                'text' => $this->getUserText($user, [
-                                    'director' => $director['name_director'],
-                                    'divisi' => $divisi['nm_divisi'],
-                                    'department' => $dept['name_department']
-                                ]),
-                                'icon' => 'fa fa-user'
-                            ];
-                        }
-                        foreach ($dept['section'] ?? [] as $section) {
-                            $sectionNode = ['id' => 'section-' . $section['id_section'], 'text' => $section['name_section'], 'children' => []];
-                            $usersAtSection = $this->filterUsersAtLevel($section['users'] ?? [], 'section');
-                            foreach ($usersAtSection as $user) {
-                                $sectionNode['children'][] = [
-                                    'id' => 'user-' . $user['id'],
-                                    'text' => $this->getUserText($user, [
-                                        'director' => $director['name_director'],
-                                        'divisi' => $divisi['nm_divisi'],
-                                        'department' => $dept['name_department'],
-                                        'section' => $section['name_section']
-                                    ]),
-                                    'icon' => 'fa fa-user'
-                                ];
-                            }
-                            foreach ($section['unit'] ?? [] as $unit) {
-                                $unitNode = ['id' => 'unit-' . $unit['id_unit'], 'text' => $unit['name_unit'], 'children' => []];
-                                $usersAtUnit = $this->filterUsersAtLevel($unit['users'] ?? [], 'unit');
-                                foreach ($usersAtUnit as $user) {
-                                    $unitNode['children'][] = [
-                                        'id' => 'user-' . $user['id'],
-                                        'text' => $this->getUserText($user, [
-                                            'director' => $director['name_director'],
-                                            'divisi' => $divisi['nm_divisi'],
-                                            'department' => $dept['name_department'],
-                                            'section' => $section['name_section'],
-                                            'unit' => $unit['name_unit']
-                                        ]),
-                                        'icon' => 'fa fa-user'
-                                    ];
-                                }
-                                $sectionNode['children'][] = $unitNode;
-                            }
-                            $deptNode['children'][] = $sectionNode;
-                        }
-                        $divNode['children'][] = $deptNode;
-                    }
-                    $dirNode['children'][] = $divNode;
-                }
+
+                $sectionNode['children'][] = $unitNode;
             }
-            $result[] = $dirNode;
+
+            $deptNode['children'][] = $sectionNode;
         }
-        return json_encode($result);
+
+        return $deptNode;
     }
-    private function getDivDeptKode($user)
+
+    public function getDivDeptKode($user)
     {
         if ($user->department_id_department != NULL) {
             $divisiName = Department::where('id_department', $user->department_id_department)->first();
@@ -585,198 +857,129 @@ class UndanganController extends Controller
 
     public function store(Request $request)
     {
-        //dd($request->all());
         $emojiErrors = $this->validateNoEmoji($request);
         if (!empty($emojiErrors)) {
             return redirect()->back()
                 ->withErrors($emojiErrors)
                 ->withInput();
         }
-        // Ubah validasi tujuan jadi array
+
         $validator = Validator::make($request->all(), [
-            'judul' => 'required|string|max:70',
+            'judul' => 'required|string|max:255',
             'isi_undangan' => 'required|string',
             'tujuan' => 'required|array|min:1',
-            'nomor_undangan' => 'required|string|max:255',
-            'nama_bertandatangan' => 'required|exists:users,id', // harus user id
-            'pembuat' => 'required|int|max:255',
+            'nomor_undangan' => 'nullable|string',
+            'kode_bagian' => 'required|exists:bagian_kerja,kode_bagian',
+            'manager_user_id' => 'required|exists:users,id',
+            'pembuat' => 'required|string',
             'catatan' => 'nullable|string|max:255',
             'tgl_dibuat' => 'required|date',
-            'seri_surat' => 'required|numeric',
-            'kode' => 'required|string|max:10',
             'tgl_disahkan' => 'nullable|date',
             'tgl_rapat' => 'required|date',
             'tempat' => 'required|string',
             'waktu_mulai' => 'required|string',
             'waktu_selesai' => 'required|string',
-            'lampiran' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+            'lampiran' => 'nullable',
+            'lampiran.*' => 'file|mimes:pdf,jpg,jpeg,png|max:2048',
         ], [
             'tgl_dibuat.required' => 'Tanggal dibuat wajib diisi.',
             'tujuan.required' => 'Minimal satu tujuan harus dipilih.',
-            'lampiran.mimes' => 'File harus berupa PDF, JPG, atau PNG.',
-            'lampiran.max' => 'Ukuran file tidak boleh lebih dari 2 MB.',
+            'kode_bagian.required' => 'Bagian kerja wajib dipilih.',
+            'kode_bagian.exists' => 'Bagian kerja tidak valid.',
+            'lampiran.*' => 'Lampiran gagal diunggah. Pastikan format dan ukuran file sesuai ketentuan.',
         ]);
 
         if ($validator->fails()) {
-            return redirect()->back()->withErrors($validator)->withInput();
+            return redirect()->back()->with('error', $validator->errors()->first())->withInput();
         }
 
-
-        // Proses file lampiran (jika ada)
-        $filePath = null;
-
+        // Proses lampiran
+        $lampiranPath = null;
         if ($request->hasFile('lampiran')) {
-            $file = $request->file('lampiran');
-            $fileData = base64_encode(file_get_contents($file->getRealPath()));
-            $filePath = $fileData;
+            $newFiles = [];
+            foreach ($request->file('lampiran') as $file) {
+                if ($file->isValid()) {
+                    $ext = strtolower($file->getClientOriginalExtension());
+                    $folder = $ext === 'pdf' ? 'lampiran/undangan/pdf' :
+                            (in_array($ext, ['png', 'jpg', 'jpeg']) ? 'lampiran/undangan/image' : 'lampiran/undangan/other');
+
+                    $filename = time() . '_' . $file->getClientOriginalName();
+                    $filePath = $file->storeAs($folder, $filename, 'public');
+
+                    $newFiles[] = [
+                        'name' => $file->getClientOriginalName(),
+                        'path' => $filePath,
+                        'size' => $file->getSize(),
+                        'uploaded_at' => now()->toDateTimeString()
+                    ];
+                }
+            }
+            $lampiranPath = !empty($newFiles) ? json_encode($newFiles) : null;
         }
 
-
-
-
-        //SIMPAN NOMER SERI
-        $user = Auth::user();
-
-        if ($user->divisi_id_divisi) {
-            $divisi = \App\Models\Divisi::find($user->divisi_id_divisi);
-            $divDeptKode = $divisi?->kode_divisi;
-        } elseif ($user->id_department) {
-            $department = \App\Models\Department::find($user->id_department);
-            $divDeptKode = $department?->kode_department;
-        } else {
-            $divDeptKode = null;
-        }
-        $seri = Seri::where('kode', $divDeptKode)
-            ->where('tahun', now()->year)
-            ->latest()
-            ->first();
-        $seri = Seri::getNextSeri(true);
-        if (!$seri) {
-            return back()->with('error', 'Nomor seri tidak ditemukan.');
-        }
-
-
-
-
-        //PROSES PECAH ID DARI 'tujuan'
         $tujuanArray = is_array($request->tujuan) ? $request->tujuan : explode(';', $request->tujuan);
         $tujuanString = implode(';', $tujuanArray);
 
+        $manager = User::findOrFail($request->input('manager_user_id'));
 
-        //dd($request->all());
-        // PROSES UNTUK Simpan undangan KE DATABASE
-        $manager = User::findOrFail($request->input('nama_bertandatangan')); // Ambil user manager yang dipilih
-        //dd($request->all());
+        // Create undangan
         $undangan = Undangan::create([
             'judul' => $request->input('judul'),
             'tujuan' => $tujuanString,
+            'kode_bagian' => $request->input('kode_bagian'), // ✅ SIMPAN
             'isi_undangan' => $request->input('isi_undangan'),
-            'nomor_undangan' => $request->input('nomor_undangan'),
+            'seri_surat' => null, // ← Belum ada seri
+            'nomor_undangan' => null, // ✅ KOSONG hingga approve
             'tgl_dibuat' => $request->input('tgl_dibuat'),
-            'tgl_disahkan' => $request->input('tgl_disahkan'),
+            'tgl_disahkan' => null, // ← Belum disahkan
             'pembuat' => $request->input('pembuat'),
             'catatan' => $request->input('catatan'),
-            'seri_surat' => $request->input('seri_surat'),
             'kode' => $request->input('kode'),
             'status' => 'pending',
             'tgl_rapat' => $request->input('tgl_rapat'),
             'tempat' => $request->input('tempat'),
             'waktu_mulai' => $request->input('waktu_mulai'),
             'waktu_selesai' => $request->input('waktu_selesai'),
-            // Simpan nama lengkap manager, bukan id
             'nama_bertandatangan' => $manager->firstname . ' ' . $manager->lastname,
-            'lampiran' => $filePath,
+            'lampiran' => $lampiranPath,
         ]);
 
-        //PROSES PENGIRIMAN DOKUMEN
+        // Kirim ke manager untuk approval
         $creator = Auth::user();
-        if (Auth::user()->role_id_role == 3) { // Manager
+        $push = new NotifApiController();
 
-            // PROSES TTD OLEH MANAGER
-            $qrText = "Disetujui oleh: " . Auth::user()->firstname . ' ' . Auth::user()->lastname . "\nTanggal: " . now()->translatedFormat('l, d F Y');
-            $qrImage = QrCode::format('svg')->generate($qrText);
-            $qrBase64 = base64_encode($qrImage);
+        Kirim_Document::create([
+            'id_document' => $undangan->id_undangan,
+            'jenis_document' => 'undangan',
+            'id_pengirim' => $creator->id,
+            'id_penerima' => $manager->id,
+            'status' => 'pending',
+            'updated_at' => now(),
+        ]);
 
-            $undangan->qr_approved_by = $qrBase64;
-            $undangan->status = 'approve';
-            $undangan->tgl_disahkan = now();
-            $undangan->save();
+        Notifikasi::create([
+            'judul' => "Undangan Dalam Proses Persetujuan",
+            'judul_document' => $undangan->judul,
+            'id_user' => $undangan->pembuat,
+            'updated_at' => now()
+        ]);
 
-            $tujuanUserId = is_array($undangan->tujuan) ? $undangan->tujuan : explode(';', $undangan->tujuan);
+        Notifikasi::create([
+            'judul' => "Undangan Menunggu Persetujuan",
+            'judul_document' => $undangan->judul,
+            'id_user' => $manager->id,
+            'updated_at' => now()
+        ]);
 
+        $push->sendToUser($manager->id, 'Undangan Menunggu Persetujuan', $undangan->judul);
 
-
-            foreach ($tujuanUserId as $user) {
-                if ($user == $creator->id) continue;
-                $recipients = User::where('id', $user)->get();
-                foreach ($recipients as $recipient) {
-                    $sudahDikirim = Kirim_Document::where([
-                        ['id_document', $undangan->id_undangan],
-                        ['jenis_document', 'undangan'],
-                        ['id_pengirim', $creator->id],
-                        ['id_penerima', $recipient->id],
-                        ['status', 'approve'],
-                        ['updated_at', now()] // Cek apakah sudah dikirim dalam 5 menit terakhir
-                    ])->exists();
-
-                    if (!$sudahDikirim) {
-                        Kirim_Document::create([
-                            'id_document' => $undangan->id_undangan,
-                            'jenis_document' => 'undangan',
-                            'id_pengirim' => $creator->id,
-                            'id_penerima' => $recipient->id,
-                            'status' => 'approve',
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                    }
-                    //Notifikasi
-                    Notifikasi::create([
-                        'judul' => "Undangan Masuk",
-                        'judul_document' => $undangan->judul,
-                        'id_user' => $recipient->id,
-                        'updated_at' => now()
-                    ]);
-                }
-            }
-
-
-            //Notifikasi
-            Notifikasi::create([
-                'judul' => "Undangan Terkirim",
-                'judul_document' => $undangan->judul,
-                'id_user' => $undangan->pembuat,
-                'updated_at' => now()
-            ]);
-        } else {
-            // Kirim ke manager yang dipilih (approval masih pending)
-            Kirim_Document::create([
-                'id_document' => $undangan->id_undangan,
-                'jenis_document' => 'undangan',
-                'id_pengirim' => Auth::user()->id,
-                'id_penerima' => $manager->id,
-                'status' => 'pending',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            Notifikasi::create([
-                'judul' => "Undangan Dalam Proses Persetujuan",
-                'judul_document' => $undangan->judul,
-                'id_user' => $undangan->pembuat,
-                'updated_at' => now()
-            ]);
-            Notifikasi::create([
-                'judul' => "Undangan Menunggu Approval",
-                'judul_document' => $undangan->judul,
-                'id_user' => $manager->id,
-                'updated_at' => now()
-            ]);
+        if (Auth::user()->role_id_role == 3) {
+            return redirect()->route('undangan.terkirim')
+                ->with('success', 'Undangan berhasil dibuat dan menunggu persetujuan. Nomor surat akan diberikan setelah disetujui.');
         }
 
-
-
-        return redirect()->route('undangan.' . Auth::user()->role->nm_role)
-            ->with('success', 'Dokumen berhasil dibuat.');
+        return redirect()->route(Auth::user()->role->nm_role . '.undangan.terkirim')
+            ->with('success', 'Undangan berhasil dibuat dan menunggu persetujuan. Nomor surat akan diberikan setelah disetujui.');
     }
 
     private function convertToRoman($number)
@@ -797,39 +1000,36 @@ class UndanganController extends Controller
         ];
         return $map[$number];
     }
+
     public function updateDocumentStatus(Request $request, $id)
     {
         $undangan = Undangan::findOrFail($id);
-        $userDivisiId = Auth::user()->divisi_id_divisi;
         $userId = Auth::id();
+        $push = new NotifApiController();
 
-        // Validasi input dinamis: catatan wajib jika reject/correction
+        // Validasi input dinamis
         $rules = [
             'status' => 'required|in:approve,reject,correction',
             'catatan' => 'nullable|string',
         ];
         $messages = [];
+
         if (in_array($request->status, ['reject', 'correction'])) {
             $rules['catatan'] = 'required|string';
             $messages['catatan.required'] = 'Catatan wajib diisi jika undangan ditolak atau dikoreksi.';
         }
+
         $request->validate($rules, $messages);
 
-        // Update status di tabel undangan
+        // Update status
         $undangan->status = $request->status;
-        if ($request->status == 'approve' || $request->status == 'reject') {
-            $undangan->tgl_disahkan = now();
-        } else {
-            $undangan->tgl_disahkan = null;
-        }
-        $undangan->catatan = $request->catatan;
-        $undangan->save();
 
-        // Update status di kirim_document untuk user yang login
+        // Update kirim_document
         $currentKirim = Kirim_Document::where('id_document', $id)
             ->where('jenis_document', 'undangan')
             ->where('id_penerima', $userId)
             ->first();
+
         if ($currentKirim) {
             $currentKirim->status = $request->status;
             $currentKirim->updated_at = now();
@@ -837,29 +1037,79 @@ class UndanganController extends Controller
         }
 
         if ($request->status == 'approve') {
-            // PROSES TTD OLEH MANAGER
-            $qrText = "Disetujui oleh: " . Auth::user()->firstname . ' ' . Auth::user()->lastname . "\nTanggal: " . now()->translatedFormat('l, d F Y');
-            $qrImage = QrCode::format('svg')->generate($qrText);
-            $qrBase64 = base64_encode($qrImage);
+            $tglDisahkan = now();
+            $undangan->tgl_disahkan = $tglDisahkan;
 
-            $undangan->qr_approved_by = $qrBase64;
-            $undangan->status = 'approve';
-            $undangan->tgl_disahkan = now();
-            $undangan->save();
+            // ===================================================================
+            // 🎯 GENERATE NOMOR SURAT OTOMATIS MENGGUNAKAN CounterNomorSurat
+            // ===================================================================
+            // ✅ Cek apakah nomor masih kosong (NULL atau empty)
+            if (empty($undangan->nomor_undangan)) {
 
+                $bulanRomawi = \App\Models\CounterNomorSurat::getBulanRomawi(now()->month);
+
+                try {
+                    // Generate nomor surat otomatis
+                    $counter = \App\Models\CounterNomorSurat::createNomorSurat([
+                        'tanggal_permintaan' => $tglDisahkan,
+                        'perusahaan' => 'REKA',
+                        'kode_tipe_surat' => 'GEN',
+                        'divisi' => $undangan->kode_bagian ?? $this->getDivDeptKode(Auth::user()),
+                        'bulan' => $bulanRomawi,
+                        'tahun' => $tglDisahkan->year,
+                        'pic_peminta' => Auth::user()->fullname,
+                        'jenis' => 'Undangan',
+                        'perihal' => $undangan->judul,
+                    ]);
+
+                    // Set nomor surat yang sudah di-generate
+                    $undangan->nomor_undangan = $counter->nomor_surat_generated;
+
+                } catch (\Exception $e) {
+                    // Log error dan gunakan fallback
+                    \Illuminate\Support\Facades\Log::error('Generate nomor undangan gagal: ' . $e->getMessage());
+
+                    // Fallback ke format lama
+                    $divDeptKode = $this->getDivDeptKode(Auth::user());
+                    $nextSeri = \App\Models\Seri::getNextSeri(false);
+                    $undangan->nomor_undangan = sprintf(
+                        '%02d.%02d/REKA/GEN/%s/%s/%d',
+                        $nextSeri['seri_tahunan'],
+                        $nextSeri['seri_bulanan'],
+                        strtoupper($divDeptKode),
+                        $bulanRomawi,
+                        now()->year
+                    );
+                }
+            }
+
+            // Generate QR Code dengan nomor surat yang baru
+            $qrText = "Disetujui oleh: " . Auth::user()->firstname . ' ' . Auth::user()->lastname
+                . "\nNomor Undangan: " . ($undangan->nomor_undangan ?? '-')
+                . "\nTanggal: " . $tglDisahkan->translatedFormat('l, d F Y H:i:s')
+                . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
+
+            $qrService = new QrCodeService();
+
+            try {
+                $qrBase64 = $qrService->generateWithLogo($qrText);
+                $undangan->qr_approved_by = $qrBase64;
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Generate QR Code gagal: ' . $e->getMessage());
+            }
+
+            // Kirim ke tujuan
             $tujuanUserId = is_array($undangan->tujuan) ? $undangan->tujuan : explode(';', $undangan->tujuan);
-
-
 
             foreach ($tujuanUserId as $user) {
                 if ($user == $undangan->pembuat) continue;
+
                 $sudahDikirim = Kirim_Document::where([
                     ['id_document', $undangan->id_undangan],
                     ['jenis_document', 'undangan'],
                     ['id_pengirim', $undangan->pembuat],
                     ['id_penerima', $user],
                     ['status', 'approve'],
-                    ['updated_at', now()] // Cek apakah sudah dikirim dalam 5 menit terakhir
                 ])->exists();
 
                 if (!$sudahDikirim) {
@@ -869,40 +1119,48 @@ class UndanganController extends Controller
                         'id_pengirim' => $undangan->pembuat,
                         'id_penerima' => $user,
                         'status' => 'approve',
-                        'created_at' => now(),
                         'updated_at' => now(),
                     ]);
                 }
+
                 Notifikasi::create([
                     'judul' => "Undangan Masuk",
                     'judul_document' => $undangan->judul,
                     'id_user' => $user,
                     'updated_at' => now()
                 ]);
+
+                $push->sendToUser($user, 'Undangan Masuk', $undangan->judul);
             }
-            // Notifikasi
+
             Notifikasi::create([
                 'judul' => "Undangan Disetujui dan Telah Terkirim",
                 'judul_document' => $undangan->judul,
                 'id_user' => $undangan->pembuat,
                 'updated_at' => now()
             ]);
-            // Notifikasi
+
+            $push->sendToUser($undangan->pembuat, 'Undangan Disetujui dan Telah Terkirim', $undangan->judul);
+
             Notifikasi::create([
                 'judul' => "Undangan Terkirim",
                 'judul_document' => $undangan->judul,
                 'id_user' => $userId,
                 'updated_at' => now()
             ]);
-            // Notifikasi
 
         } elseif ($request->status == 'reject') {
+            $undangan->tgl_disahkan = now();
+
             Notifikasi::create([
-                'judul' => "Undangan Tidak Disetujui",
+                'judul' => "Undangan Ditolak",
                 'judul_document' => $undangan->judul,
                 'id_user' => $undangan->pembuat,
                 'updated_at' => now()
             ]);
+
+            $push->sendToUser($undangan->pembuat, 'Undangan Ditolak', $undangan->judul);
+
         } elseif ($request->status == 'correction') {
             Notifikasi::create([
                 'judul' => "Undangan Perlu Dikoreksi",
@@ -910,10 +1168,23 @@ class UndanganController extends Controller
                 'id_user' => $undangan->pembuat,
                 'updated_at' => now()
             ]);
+
+            $push->sendToUser($undangan->pembuat, 'Undangan Perlu Dikoreksi', $undangan->judul);
+
+        } else {
+            $undangan->tgl_disahkan = null;
         }
+
+        $undangan->catatan = $request->catatan;
+        $undangan->save();
+
+        if (Auth::user()->role_id_role == 3) {
+            return redirect()->route('undangan.terkirim')
+                ->with('success', 'Status undangan berhasil diperbarui.');
+        }
+
         return redirect()->route('undangan.' . Auth::user()->role->nm_role)
-            ->with('success', 'Dokumen berhasil dibuat.');
-        //return redirect()->route('undangan.manager')->with('success', 'Status undangan berhasil diperbarui.');
+            ->with('success', 'Status undangan berhasil diperbarui.');
     }
 
 
@@ -946,7 +1217,7 @@ class UndanganController extends Controller
         $undangan = Undangan::findOrFail($id);
         $divisi = Divisi::all();
         $seri = Seri::all();
-        $divisiId = auth()->user()->divisi_id_divisi;
+        $divisiId = Auth::user()->divisi_id_divisi;
         $user = Auth::user();
         $managers = User::where('role_id_role', 3)
             ->where(function ($q) use ($user) {
@@ -961,29 +1232,54 @@ class UndanganController extends Controller
         $jsTreeData = json_decode($jsTreeDataJson, true);   // decode khusus edit()
         $mainDirector = $orgTree[0] ?? null;
 
+
+        // kode_bagian
+        $bagianKerja = BagianKerja::orderBy('kode_bagian')->get();
+
         $tujuanArray = [];
         if (!empty($undangan->tujuan)) {
             $tujuanArray = explode(';', $undangan->tujuan);
         }
 
-        return view(Auth::user()->role->nm_role . '.undangan.edit-undangan', compact(
+        // Parse lampiran data jika ada
+        $lampiranData = [];
+        if ($undangan->lampiran) {
+            // Coba decode sebagai JSON dulu (untuk data baru)
+            $jsonData = json_decode($undangan->lampiran, true);
+            if ($jsonData !== null && is_array($jsonData)) {
+                $lampiranData = $jsonData;
+            } else {
+                // Jika bukan JSON, ini kemungkinan data BLOB lama - skip untuk sekarang
+                // atau bisa dikasih placeholder jika memang ada file
+                $lampiranData = [];
+            }
+        }
+
+        return view(Auth::user()->role->nm_role . '.undangan.edit-baru', compact(
             'undangan',
             'divisi',
             'seri',
             'managers',
             'tujuanArray',
-            'jsTreeData'
+            'jsTreeData',
+            'lampiranData',
+            'bagianKerja'
         ));
     }
     public function update(Request $request, $id)
     {
         //dd($request->all());
         $undangan = Undangan::findOrFail($id);
-        // Bersihkan isi_undangan dari tag HTML & whitespace
-        $isiUndanganBersih = trim(strip_tags($request->isi_undangan));
+        // SIMPAN RAW HTML DARI TINYMCE (JANGAN DIUBAH)
+        $rawIsiUndangan = $request->isi_undangan;
 
-        $request->merge([
-            'isi_undangan' => $isiUndanganBersih
+        // BIKIN VERSI PLAIN TEXT HANYA UNTUK CEK EMOJI
+        $isiUndanganBersih = trim(strip_tags($rawIsiUndangan));
+
+        // CLONE REQUEST KHUSUS UNTUK VALIDASI EMOJI
+        $requestForEmoji = clone $request;
+        $requestForEmoji->merge([
+            'isi_undangan' => $isiUndanganBersih,
         ]);
 
         // VALIDASI EMOJI DULU SEBELUM VALIDASI LAINNYA
@@ -996,18 +1292,24 @@ class UndanganController extends Controller
         // Validasi input
         $request->validate([
             'judul' => 'required|string|max:255',
+            // 'kepada' => 'required|string',
             'isi_undangan' => 'required|string',
             'tujuan' => 'required|array|min:1',
             //'tujuan.*' => 'exists:divisi,id_divisi',
-            'nomor_undangan' => 'required|string|max:255',
+            'nomor_undangan' => 'nullable|string|max:255',
+            'kode_bagian' => 'required|string',
             'nama_bertandatangan' => 'required|string|max:255',
             'tgl_dibuat' => 'required|date',
-            'seri_surat' => 'required|numeric',
+            // 'seri_surat' => 'required|numeric',
             'tgl_disahkan' => 'nullable|date',
             'tgl_rapat' => 'required|date',
             'tempat' => 'required|string',
             'waktu_mulai' => 'required|string',
             'waktu_selesai' => 'required|string',
+            'lampiran.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+        ], [
+            'lampiran.*' => 'Lampiran gagal diunggah. Pastikan format dan ukuran file sesuai ketentuan.',
+
         ]);
         //dd($request->errors());
 
@@ -1015,8 +1317,11 @@ class UndanganController extends Controller
         if ($request->filled('judul')) {
             $undangan->judul = $request->judul;
         }
-        if ($request->filled('isi_undangan')) {
-            $undangan->isi_undangan = $request->isi_undangan;
+        if ($request->filled('kepada')) {
+            $undangan->kepada = $request->kepada;
+        }
+        if (!empty($rawIsiUndangan)) {
+            $undangan->isi_undangan = $rawIsiUndangan;
         }
         if ($request->filled('tujuan')) {
             $undangan->tujuan = implode(';', $request->tujuan);
@@ -1051,26 +1356,131 @@ class UndanganController extends Controller
         if ($request->filled('waktu_selesai')) {
             $undangan->waktu_selesai = $request->waktu_selesai;
         }
+        if ($request->filled('kode_bagian')) {
+            $undangan->kode_bagian = $request->kode_bagian;
+        }
 
+        // Handle lampiran files
+        if ($request->hasFile('lampiran')) {
+            $files = $request->file('lampiran');
+            $newFiles = [];
+
+            // Create folders if not exist
+            $folder = 'undangan/lampiran/' . $undangan->id_undangan;
+
+            foreach ($files as $file) {
+                if ($file->isValid()) {
+                    $filename = time() . '_' . uniqid() . '_' . $file->getClientOriginalName();
+                    $filePath = $file->storeAs($folder, $filename, 'public');
+
+                    $newFiles[] = [
+                        'name' => $file->getClientOriginalName(),
+                        'path' => $filePath,
+                        'size' => $file->getSize(),
+                        'uploaded_at' => now()->toDateTimeString()
+                    ];
+                }
+            }
+
+            // Get existing files
+            $existingFiles = [];
+            if ($undangan->lampiran) {
+                $jsonData = json_decode($undangan->lampiran, true);
+                if ($jsonData !== null && is_array($jsonData)) {
+                    $existingFiles = $jsonData;
+                }
+            }
+
+            // Merge existing and new files
+            $allFiles = array_merge($existingFiles, $newFiles);
+            $undangan->lampiran = !empty($allFiles) ? json_encode($allFiles) : null;
+        }
 
         $undangan->save();
-        \Log::info('Update undangan berhasil', $undangan->toArray());
+        \Illuminate\Support\Facades\Log::info('Update undangan berhasil', [
+            'undangan' => is_object($undangan) && method_exists($undangan, 'toArray')
+                ? $undangan->toArray()
+                : (array) $undangan
+        ]);
+
         // Update status pada kirim_document juga jika ada
         \App\Models\Kirim_Document::where('id_document', $undangan->id_undangan)
             ->where('jenis_document', 'undangan')
             ->update(['status' => 'pending', 'updated_at' => now()]);
-
-        return redirect()->route('undangan.' . Auth::user()->role->nm_role)->with('success', 'Undangan updated successfully');
+        if (Auth::user()->role_id_role == 1) {
+            return redirect()->route('superadmin.undangan.index')->with('success', 'Undangan berhasil diubah dan disimpan.');
+        } else if (Auth::user()->role_id_role == 2) {
+            return redirect()->route(Auth::user()->role->nm_role . '.undangan.terkirim')->with('success', 'Undangan berhasil diubah dan disimpan.');
+        } else {
+            return redirect()->route('undangan.terkirim')->with('success', 'Undangan berhasil diubah dan disimpan.');
+        }
     }
     public function destroy($id)
     {
-        $undangan = Undangan::findOrFail($id);
+        try {
+            $undangan = Undangan::findOrFail($id);
 
-        // Hapus kirim_document terkait
-        $undangan->delete();
-        Kirim_Document::where('id_document', $id)->where('jenis_document', 'undangan')->delete();
-        return redirect()->route('undangan.' . Auth::user()->role->nm_role)->with('success', 'Undangan deleted successfully.');
+            // Hapus kirim_document terkait
+            $undangan->delete();
+            Kirim_Document::where('id_document', $id)->where('jenis_document', 'undangan')->delete();
+
+            // Check if request expects JSON response
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Undangan berhasil dihapus'
+                ]);
+            }
+
+            return redirect()->route('undangan.' . Auth::user()->role->nm_role)->with('success', 'Undangan deleted successfully.');
+        } catch (\Exception $e) {
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus undangan: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return redirect()->back()->with('error', 'Gagal menghapus undangan: ' . $e->getMessage());
+        }
     }
+
+    public function deleteLampiranExisting($undanganId, $index)
+    {
+        try {
+            $undangan = Undangan::findOrFail($undanganId);
+
+            // Parse lampiran data
+            $lampiranData = [];
+            if ($undangan->lampiran) {
+                $lampiranData = json_decode($undangan->lampiran, true) ?? [];
+            }
+
+            // Cek apakah index valid
+            if (!isset($lampiranData[$index])) {
+                return response()->json(['success' => false, 'message' => 'File tidak ditemukan'], 404);
+            }
+
+            // Hapus file fisik jika ada
+            if (isset($lampiranData[$index]['path']) && \Illuminate\Support\Facades\Storage::disk('public')->exists($lampiranData[$index]['path'])) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($lampiranData[$index]['path']);
+            }
+
+            // Hapus dari array
+            unset($lampiranData[$index]);
+            // Reindex array
+            $lampiranData = array_values($lampiranData);
+
+            // Update undangan dengan lampiran data yang baru
+            $undangan->lampiran = empty($lampiranData) ? null : json_encode($lampiranData);
+            $undangan->save();
+
+            return response()->json(['success' => true, 'message' => 'File berhasil dihapus']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan saat menghapus file'], 500);
+        }
+    }
+
     public function view($id)
     {
         $userId = Auth::id(); // Ambil ID user yang sedang login
@@ -1127,7 +1537,21 @@ class UndanganController extends Controller
         // Karena hanya satu memo, kita bisa mengambil dari collection lagi
         $undangan = $undanganCollection->first();
 
-        return view(Auth::user()->role->nm_role . '.undangan.view-undangan', compact('undangan'));
+        // Parse lampiran data
+        $lampiranData = [];
+        if ($undangan->lampiran) {
+            // Coba decode sebagai JSON dulu (untuk data baru)
+            $jsonData = json_decode($undangan->lampiran, true);
+            if ($jsonData !== null && is_array($jsonData)) {
+                $lampiranData = $jsonData;
+            } else {
+                // Jika bukan JSON, ini kemungkinan data BLOB lama - skip untuk sekarang
+                // atau bisa dikasih placeholder jika memang ada file
+                $lampiranData = [];
+            }
+        }
+
+        return view(Auth::user()->role->nm_role . '.undangan.view-undangan', compact('undangan', 'lampiranData'));
     }
     public function updateStatus(Request $request, $id)
     {
@@ -1141,6 +1565,16 @@ class UndanganController extends Controller
 
         // Update status
         $undangan->status = $request->status;
+        // Also update related kirim_document rows so their status reflects the
+        // undangan status change. Find rows where id_document == undangan id
+        // and jenis_document == 'undangan'.
+        \App\Models\Kirim_Document::where('id_document', $id)
+            ->where('jenis_document', 'undangan')
+            ->update([
+                'status' => $request->status,
+                'updated_at' => now(),
+            ]);
+
 
         // Jika status 'approve', simpan tanggal pengesahan
         if ($request->status == 'approve') {

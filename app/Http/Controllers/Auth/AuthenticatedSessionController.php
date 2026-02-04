@@ -26,13 +26,16 @@ class AuthenticatedSessionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         // Validasi input
+        // tambah login pakai NIP
+
+
         $request->validate([
-            'email' => 'required|email',
+            'credential' => 'required',
             'password' => 'required',
         ]);
 
         // Cek apakah email terdaftar
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $request->credential)->orWhere('nip', $request->credential)->first();
 
         if (!$user) {
             return back()->withErrors([
@@ -40,8 +43,10 @@ class AuthenticatedSessionController extends Controller
             ])->onlyInput('email');
         }
 
+        $field = $user->email === $request->credential ? 'email' : 'nip';
+
         // Coba autentikasi
-        if (!Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
+        if (!Auth::attempt([$field => $request->credential, 'password' => $request->password], $request->boolean('remember'))) {
             return back()->withErrors([
                 'password' => 'Password salah.',
             ])->onlyInput('email');

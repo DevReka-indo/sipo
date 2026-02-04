@@ -3,357 +3,297 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UndanganResource;
+use App\Http\Controllers\Api\NotifApiController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Undangan;
-use App\Models\Seri;
-use App\Models\User;
-use App\Models\Divisi;
-use App\Models\Arsip;
-use App\Models\Notifikasi;
-use App\Models\Kirim_Document;
-use App\Models\Backup_Document;
-use Illuminate\Support\Facades\Log;
+use App\Models\{Undangan, Seri, User, Divisi, Arsip, Notifikasi, Kirim_Document, Backup_Document, Department, Director};
 use Clegginabox\PDFMerger\PDFMerger;
 use Barryvdh\DomPDF\Facade\PDF;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
+use App\Services\QrCodeService;
 
 class UndanganApiController extends Controller
 {
-    // Untuk user biasa berdasarkan divisi
     public function index(Request $request)
     {
+
         $user = Auth::user();
-        $userDivisiId = $user->divisi_id_divisi;
-        $userId = $user->id;
 
-        Log::debug("User ID: {$userId}, Divisi ID: {$userDivisiId}");
+        $undanganDiarsipkan = Arsip::where('user_id', $user->id)
+            ->where('jenis_document', 'App\Models\Undangan')
+            ->pluck('document_id')->toArray();
 
-        $undanganDiarsipkan = Arsip::where('user_id', $userId)->pluck('document_id')->toArray();
+        $ownedDocs = Kirim_Document::where('jenis_document', 'undangan')
+            ->where(function ($q) use ($user) {
+                $q->where('id_penerima', $user->id)
+                    ->orWhere('id_pengirim', $user->id);
+            })
+            ->pluck('id_document')->unique()->toArray();
 
-        $query = Undangan::with('divisi')
-            ->whereNotIn('id_undangan', $undanganDiarsipkan)
-            ->where(function ($q) use ($userDivisiId, $userId) {
-                $q->where('divisi_id_divisi', $userDivisiId)
-                  ->orWhereHas('kirimDocument', function ($query) use ($userId, $userDivisiId) {
-                      $query->where('jenis_document', 'undangan')
-                            ->where('id_penerima', $userId)
-                            ->whereHas('penerima', function ($subQuery) use ($userDivisiId) {
-                                $subQuery->where('divisi_id_divisi', $userDivisiId);
-                            });
-                  });
-            });
+        // eager load user
+        $query = Undangan::with('user')->whereNotIn('id_undangan', $undanganDiarsipkan)->whereIn('id_undangan', $ownedDocs)->latest();
 
-        // Filtering
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-
-        if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
-            $query->whereBetween('tgl_dibuat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
+        if ($request->filled('kode') && $request->kode !== 'pilih') {
+            $query->where('kode', $request->kode);
         }
-
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('judul', 'like', '%' . $request->search . '%')
-                  ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
-            });
-        }
-
-        $query->orderBy('created_at', $request->get('sort_direction', 'desc'));
 
         $undangans = $query->get();
 
-        // Transform final_status
-        $undangans->transform(function ($undangan) use ($userId, $userDivisiId) {
-            if ($undangan->divisi_id_divisi === $userDivisiId) {
-                $undangan->final_status = $undangan->status;
-            } else {
-                $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
-                    ->where('jenis_document', 'undangan')
-                    ->where('id_penerima', $userId)
-                    ->first();
-                $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+        return UndanganResource::collection($undangans)->additional([
+            'status' => 'success',
+            'message' => $undangans->isEmpty() ? 'Belum ada undangan' : 'Daftar undangan ditemukan',
+        ]);
+    }
+
+    public function kodeFilter()
+    {
+        $kode = Undangan::whereNotNull('kode')
+            ->pluck('kode')
+            ->filter()
+            ->unique()
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $kode,
+        ], 200);
+    }
+    public function getAll()
+    {
+        $undangans = Undangan::with('user')->latest()->get();
+
+        return UndanganResource::collection($undangans)->additional([
+            'status' => 'success',
+            'message' => $undangans->isEmpty() ? 'Belum ada undangan' : 'Daftar undangan ditemukan',
+        ]);
+    }
+
+    public function show($id)
+    {
+
+        $undangan = Undangan::with('user')->findOrFail($id);
+
+        if (!$undangan) {
+            return response()->json(
+                [
+                    'status' => 'error',
+                    'message' => 'Undangan tidak ditemukan',
+                ],
+                404,
+            );
+        }
+
+        return new UndanganResource($undangan);
+    }
+
+    public function viewPDF($id)
+    {
+        $undangan = Undangan::findOrFail($id);
+
+        if (!$undangan) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Undangan tidak ditemukan',
+            ], 404);
+        }
+
+        $pdf = PDF::loadView('pdf.undangan', compact('undangan'));
+        return $pdf->stream("undangan_{$undangan->id_undangan}.pdf");
+    }
+
+    public function lampiran($id)
+    {
+        $undangan = Undangan::findOrFail($id);
+        if (!$undangan->lampiran) {
+            abort(404, 'Lampiran tidak ditemukan');
+        }
+
+        $lampiran = $undangan->lampiran;
+
+        // 1️⃣ Coba decode JSON → untuk kasus multiple file
+        $decoded = json_decode($lampiran, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            // Kalau ternyata array, kembalikan daftar URL
+            $urls = [];
+            foreach ($decoded as $index => $fileBase64) {
+                $urls[] = route('api.undangan.lampiran.single', [
+                    'id' => $id,
+                    'index' => $index,
+                ]);
             }
-            return $undangan;
-        });
 
-        Log::debug('Undangan setelah transform final_status: ' . $undangans->pluck('final_status'));
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Multiple lampiran ditemukan',
+                'data' => $urls,
+            ]);
+        }
 
-        $kirimDocuments = Kirim_Document::where('jenis_document', 'undangan')
-        ->whereHas('undangan')
-        ->orderBy('id_kirim_document', 'desc')
-        ->get();
+        // 2️⃣ Kalau single file
+        $fileData = base64_decode($lampiran);
 
-        Log::debug('Jumlah kirimDocuments: ' . $kirimDocuments->count());
+        if (!$fileData) {
+            abort(404, 'Lampiran tidak valid');
+        }
 
-        $kirimDocuments->each(function ($kirim) {
-            $pengirim = User::find($kirim->id_pengirim);
-            $penerima = User::find($kirim->id_penerima);
+        // Deteksi mime type
+        $finfo = finfo_open();
+        $mimeType = finfo_buffer($finfo, $fileData, FILEINFO_MIME_TYPE);
+        finfo_close($finfo);
+
+        $extension = explode('/', $mimeType)[1] ?? 'bin';
+        $fileName = "lampiran_{$id}." . $extension;
+
+        return response($fileData, 200)
+            ->header('Content-Type', $mimeType)
+            ->header('Content-Disposition', 'inline; filename="' . $fileName . '"');
+    }
+
+    public function lampiranSingle($id, $index)
+    {
+        $undangan = Undangan::findOrFail($id);
+        $decoded = json_decode($undangan->lampiran, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded[$index])) {
+            abort(404, 'Lampiran tidak ditemukan');
+        }
+
+        $fileData = base64_decode($decoded[$index]);
+
+        $finfo = finfo_open();
+        $mimeType = finfo_buffer($finfo, $fileData, FILEINFO_MIME_TYPE);
+        finfo_close($finfo);
+
+        $extension = explode('/', $mimeType)[1] ?? 'bin';
+        $fileName = "lampiran_{$id}_{$index}." . $extension;
+
+        return response($fileData, 200)
+            ->header('Content-Type', $mimeType)
+            ->header('Content-Disposition', 'inline; filename="' . $fileName . '"');
+    }
+
+    public function updateStatus(Request $request, $id)
+    {
+        $push = new NotifApiController();
+        try {
+            $undangan = Undangan::findOrFail($id);
             $user = Auth::user();
 
-            $kirim->divisi_pengirim = $pengirim ? $pengirim->divisi->nm_divisi : 'Tidak Diketahui';
-            $kirim->divisi_penerima = $penerima ? $penerima->divisi->nm_divisi : 'Tidak Diketahui';
-            $kirim->divisi_user = $user->divisi->nm_divisi ?? 'Tidak Diketahui';
-        });
-
-        return response()->json([
-            'undangans' => $undangans,
-            'kirimDocuments' => $kirimDocuments,
-        ]);
-    }
-
-    // Untuk superadmin
-    public function superadmin(Request $request)
-    {
-        $user = Auth::user();
-        if ($user->role->nm_role !== 'superadmin') {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $undanganDiarsipkan = Arsip::where('user_id', $user->id)->pluck('document_id')->toArray();
-
-        $query = Undangan::with('divisi')
-            ->whereNotIn('id_undangan', $undanganDiarsipkan);
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
-            $query->whereBetween('tgl_dibuat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
-        }
-
-        if ($request->filled('divisi_id_divisi')) {
-            $query->where('divisi_id_divisi', $request->divisi_id_divisi);
-        }
-
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('judul', 'like', '%' . $request->search . '%')
-                  ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
-            });
-        }
-
-        $query->orderBy('created_at', $request->get('sort_direction', 'desc'));
-
-        $undangans = $query->get();
-
-        return response()->json($undangans);
-    }
-
-    // SEKKK IKI
-    public function updateDocumentStatus(Request $request, $id)
-    {
-         
-        try {
-            $undangan = Undangan::findOrFail($id);
-
-            // Validasi input
-            $request->validate([
-                'status' => 'required|in:approve,reject,pending',
-                'catatan' => 'nullable|string',
-            ]);
-
-            // Update status
-            $undangan->status = $request->status;
-
-            // Jika status 'approve' atau 'reject', simpan tanggal pengesahan
-            if ($request->status == 'approve' || $request->status == 'reject') {
-                $undangan->tgl_disahkan = now();
+            if ($request->status === 'approve') {
+                $request->validate([
+                    'status' => 'required',
+                ]);
             } else {
-                $undangan->tgl_disahkan = null;
+                $request->validate([
+                    'status' => 'required',
+                    'catatan' => 'required',
+                ]);
             }
 
-            // Simpan catatan jika ada
-            $undangan->catatan = $request->catatan;
+            switch ($request->status) {
+                case 'approve':
+                    $undangan->status = 'approve';
+                    $undangan->tgl_disahkan = now();
 
-            // Simpan perubahan
-            $undangan->save();
+                    $qrText = 'Disetujui oleh: ' . Auth::user()->firstname . ' ' . Auth::user()->lastname
+                        . "\nNomor Undangan: " . ($undangan->nomor_undangan ?? '-')
+                        . "\nTanggal: " . $undangan->tgl_disahkan->translatedFormat('l, d F Y H:i:s')
+                        . "\nDikeluarkan oleh Website SIPO PT Rekaindo Global Jasa";
+                    $qrService = new QrCodeService;
 
-            //tambahan
+                    $qrBase64 = $qrService->generateWithLogo($qrText);
+
+                    $undangan->qr_approved_by = $qrBase64;
+
+                    $tujuanArray = explode(';', $undangan->tujuan);
+                    foreach ($tujuanArray as $tujuanId) {
+                        Kirim_Document::create([
+                            'id_document' => $undangan->id_undangan,
+                            'jenis_document' => 'undangan',
+                            'id_pengirim' => $undangan->pembuat,
+                            'id_penerima' => $tujuanId,
+                            'status' => 'approve',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        Notifikasi::create([
+                            'judul' => 'Undangan Masuk',
+                            'judul_document' => $undangan->judul,
+                            'id_user' => $tujuanId,
+                            'updated_at' => now(),
+                        ]);
+                        $push->sendToUser(
+                            $tujuanId,
+                            'Undangan Masuk',
+                            $undangan->judul
+                        );
+                    }
+
+                    Notifikasi::create([
+                        'judul' => 'Undangan Disetujui',
+                        'judul_document' => $undangan->judul,
+                        'id_user' => $undangan->pembuat,
+                        'updated_at' => now(),
+                    ]);
+                    $push->sendToUser(
+                        $undangan->pembuat,
+                        'Undangan Disetujui',
+                        $undangan->judul
+                    );
+                    break;
+                case 'reject':
+                    $undangan->status = 'reject';
+                    $undangan->tgl_disahkan = now();
+                    Notifikasi::create([
+                        'judul' => 'Undangan Ditolak',
+                        'judul_document' => $undangan->judul,
+                        'id_user' => $undangan->pembuat,
+                        'updated_at' => now(),
+                    ]);
+                    $push->sendToUser(
+                        $undangan->pembuat,
+                        'Undangan Ditolak',
+                        $undangan->judul
+                    );
+                    break;
+                case 'correction':
+                    $undangan->status = 'correction';
+                    Notifikasi::create([
+                        'judul' => 'Undangan Perlu Revisi',
+                        'judul_document' => $undangan->judul,
+                        'id_user' => $undangan->pembuat,
+                        'updated_at' => now(),
+                    ]);
+                    $push->sendToUser(
+                        $undangan->pembuat,
+                        'Undangan Perlu Revisi',
+                        $undangan->judul
+                    );
+                    break;
+            }
+
             Kirim_Document::where('id_document', $undangan->id_undangan)
                 ->where('jenis_document', 'undangan')
-                // ->where('id_penerima', Auth::id())
-                ->update([
-                    'status' => $request->status,
-                ]);
+                ->where('id_penerima', $user->id)
+                ->update(['status' => $request->status ?? null]);
+
+            $undangan->catatan = $request->catatan ?? null;
+            $undangan->save();
 
             return response()->json([
-                'success' => true,
-                'message' => 'Undangan berhasil dikirim.',
-                'data' => $undangan
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan saat mengirimkan undangan.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function destroy($id)
-    {
-        try {
-            $undangan = Undangan::findOrFail($id);
-
-            // Pindahkan data ke tabel backup
-            Backup_Document::create([
-                'id_document' => $undangan->id_undangan,
-                'jenis_document' => 'undangan',
-                'tujuan'=> $undangan->tujuan,
-                'judul' => $undangan->judul,
-                'nomor_document' => $undangan->nomor_undangan,
-                'tgl_dibuat' => $undangan->tgl_dibuat,
-                'tgl_disahkan' => $undangan->tgl_disahkan,
-                'status' => $undangan->status,
-                'catatan' => $undangan->catatan,
-                'isi_document' => $undangan->isi_undangan,
-                'nama_bertandatangan'=> $undangan->nama_bertandatangan,
-                'lampiran' => $undangan->lampiran,
-                'pembuat' => $undangan->pembuat,
-                'seri_document' => $undangan->seri_surat,
-                'divisi_id_divisi' => $undangan->divisi_id_divisi,
-                'created_at' => $undangan->created_at,
-                'updated_at' => $undangan->updated_at,
-            ]);
-
-            // Hapus data asli
-            $undangan->delete();
-
-            return response()->json([
-                'message' => 'Undangan deleted successfully.',
-                'status' => 'success'
+                'status' => 'success',
+                'message' => 'Status dokumen berhasil diperbarui'
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to delete undangan: ' . $e->getMessage(),
-                'status' => 'error'
-            ], 500);
-        }
-    }
-
-    public function jumlahUndangan(Request $request)
-    {
-        $user = Auth::user();
-
-        $undanganDiarsipkan = Arsip::where('user_id', $user->id)->pluck('document_id')->toArray();
-
-        $query = Undangan::with('divisi')
-            ->whereNotIn('id_undangan', $undanganDiarsipkan);
-
-        // Cek apakah superadmin atau bukan
-        if ($user->role->nm_role !== 'superadmin') {
-            // Kalau bukan superadmin, batasi query seperti di index
-            $userDivisiId = $user->divisi_id_divisi;
-            $userId = $user->id;
-
-            $query->where(function ($q) use ($userDivisiId, $userId) {
-                $q->where('divisi_id_divisi', $userDivisiId)
-                ->orWhereHas('kirimDocument', function ($query) use ($userId, $userDivisiId) {
-                    $query->where('jenis_document', 'undangan')
-                            ->where('id_penerima', $userId)
-                            ->whereHas('penerima', function ($subQuery) use ($userDivisiId) {
-                                $subQuery->where('divisi_id_divisi', $userDivisiId);
-                            });
-                });
-            });
-        }
-
-        // Filter tambahan
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
-            $query->whereBetween('tgl_dibuat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
-        }
-
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('judul', 'like', '%' . $request->search . '%')
-                ->orWhere('nomor_undangan', 'like', '%' . $request->search . '%');
-            });
-        }
-
-        if ($request->filled('divisi_id_divisi') && $user->role->nm_role === 'superadmin') {
-            $query->where('divisi_id_divisi', $request->divisi_id_divisi);
-        }
-
-        // Hitung jumlah
-        $count = $query->count();
-
-        return response()->json([
-            'jumlah_undangan' => $count
-        ]);
-    }
-
-    public function ViewUndanganPDF($id_undangan)
-    {
-        try {
-            // Ambil data undangan
-            $undangan = Undangan::findOrFail($id_undangan);
-
-            // Siapkan gambar header dan footer dalam base64
-            $headerPath = public_path('img/bheader.png');
-            $footerPath = public_path('img/bfooter.png');
-
-            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
-
-            // Generate PDF utama dari Blade
-            $formatUndanganPdf = PDF::loadView('format-surat.format-undangan', [
-                'undangan' => $undangan,
-                'headerImage' => $headerBase64,
-                'footerImage' => $footerBase64,
-                'isPdf' => true
-            ])->setPaper('A4', 'portrait');
-
-            $undanganPdfContent = $formatUndanganPdf->output();
-
-            // Jika ada lampiran di database (dalam base64), gabungkan
-            if (!empty($undangan->lampiran)) {
-                $pdfMerger = new \Clegginabox\PDFMerger\PDFMerger;
-
-                // Simpan file PDF utama dan lampiran ke file sementara
-                $mainPath = storage_path("app/temp_main_{$undangan->id}.pdf");
-                $lampiranPath = storage_path("app/temp_lampiran_{$undangan->id}.pdf");
-
-                file_put_contents($mainPath, $undanganPdfContent);
-                file_put_contents($lampiranPath, base64_decode($undangan->lampiran));
-
-                // Merge kedua file
-                $outputPath = storage_path("app/temp_merged_{$undangan->id}.pdf");
-
-                $pdfMerger->addPDF($mainPath, 'all');
-                $pdfMerger->addPDF($lampiranPath, 'all');
-                $pdfMerger->merge('file', $outputPath);
-
-                // Ambil isi PDF hasil merge
-                $finalPdf = file_get_contents($outputPath);
-                $base64Pdf = base64_encode($finalPdf);
-
-                // Hapus file sementara
-                @unlink($mainPath);
-                @unlink($lampiranPath);
-                @unlink($outputPath);
-            } else {
-                // Kalau tidak ada lampiran, kirim PDF utama saja
-                $base64Pdf = base64_encode($undanganPdfContent);
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'PDF undangan berhasil diambil',
-                'undangan_id' => $undangan->id,
-                'pdf_base64' => $base64Pdf
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal mengambil undangan: ' . $e->getMessage(),
+                'status' => 'error',
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
             ], 500);
         }
     }

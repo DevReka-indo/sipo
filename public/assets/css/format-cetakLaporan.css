@@ -1,0 +1,224 @@
+@page {
+    margin-top: 120px;
+    margin-bottom: 120px;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    padding: 0;
+    margin: 0;
+}
+
+header {
+    position: fixed;
+    top: -100px;
+    left: 0;
+    right: 0;
+    width: 100%;
+}
+
+footer {
+    position: fixed;
+    bottom: -120px;
+    left: 0;
+    right: 0;
+    width: 100%;
+}
+
+main {
+    margin-top: 0px;
+    margin-bottom: 20px;
+    margin-right: 60px;
+    margin-left: 60px;
+    text-align: center;
+}
+
+.container {
+    width: 100%;
+    margin: auto;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.memo-title {
+    text-align: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: bold;
+    color: black;
+    margin-top: 0px;
+    padding : 20px;
+}
+
+.letter {
+    margin: auto;
+    background-color: #ffffff;
+    line-height: 0.5cm;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.fill {
+    margin-top: 2px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 1px;
+}
+
+.fill p {
+    text-align: left;
+}
+
+.fill h3 {
+    text-align: left;
+    margin-bottom: 15px;
+}
+
+/* Fixed table styles */
+.header1 {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    margin: 0;
+}
+
+.header1 th,
+.header1 td {
+    border: 1px solid black;
+    text-align: center;
+    padding: 5px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    font-size: 10px;
+}
+/* Kolom No */
+.header1 th:first-child,
+.header1 td:first-child {
+    width: 5%;
+    min-width: 30px;
+}
+
+/* Kolom Data Masuk*/
+.header1 th:nth-child(2),
+.header1 td:nth-child(2) {
+    width: 10%;
+}
+
+/* Kolom Data Disahkan */
+.header1 th:nth-child(3),
+.header1 td:nth-child(3) {
+    width: 10%;
+}
+
+/* Kolom Nama Dokumen*/
+.header1 th:nth-child(4),
+.header1 td:nth-child(4) {
+    width: 20%;
+}
+
+/* Kolom No Dokumen*/
+.header1 th:nth-child(5),
+.header1 td:nth-child(5) {
+    width: 20%;
+}
+/* Kolom PIC */
+.header1 th:nth-child(6),
+.header1 td:nth-child(6) {
+    width: 17%;
+}
+
+.header1 th {
+    background-color: #92c5ff99;
+    font-weight: bold;
+}
+
+.contents {
+    text-align: justify;
+    line-height: 0.7cm;
+}
+
+.signature {
+    margin-top: 5%;
+    text-align: left !important;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: 10%;
+    border: 2px solid black;
+}
+
+.signature p {
+    text-align: center;
+    margin: 0;
+}
+
+.view-mode header img,
+.view-mode footer img {
+    width: 50%;
+    margin: auto;
+}
+
+.view-mode header,
+.view-mode footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    position: fixed;
+    left: 0;
+    z-index: 100;
+}
+
+.pdf-mode header img,
+.pdf-mode footer img {
+    width: 100%;
+}
+/* DEBUG BORDERS - AKAN DIHAPUS NANTI */
+/* .container {
+    border: 2px solid red !important;
+}
+
+.content {
+    border: 2px solid orange !important;
+}
+
+.memo-title {
+    border: 2px solid yellow !important;
+}
+
+.letter {
+    border: 2px solid green !important;
+}
+
+.fill {
+    border: 2px solid blue !important;
+}
+
+.header1 tr td:first-child {
+    border: 2px solid purple !important;
+}
+
+.header2 table {
+    border: 2px solid pink !important;
+}
+
+.collab {
+    border: 2px solid brown !important;
+}
+
+.signature {
+    border: 2px solid black !important;
+}
+
+header {
+    border: 2px solid cyan !important;
+}
+
+footer {
+    border: 2px solid magenta !important;
+} */

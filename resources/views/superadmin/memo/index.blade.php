@@ -3,335 +3,490 @@
 @section('title', 'Memo')
 
 @section('content')
-<div class="container-fluid px-4 py-0 mt-0">
-  <div class="card shadow-sm border-0">
-    <div class="card-body py-3">
+    <div class="container-fluid px-4 py-0 mt-0">
+        <div class="card shadow-sm border-0">
+            <div class="card-body py-3">
 
-      <h3 class="fw-bold mb-3">Memo</h3>
+                <h3 class="fw-bold mb-3">Memo</h3>
 
-      {{-- Breadcrumb --}}
-      <div class="row mb-3">
-        <div class="col-12">
-          <div class="bg-white border rounded-2 px-3 py-2 w-100 d-flex align-items-center">
-            <a href="{{ route('superadmin.dashboard') }}" class="text-decoration-none text-primary">Beranda</a>
-            <span class="text-muted ms-1">/ Memo</span>
-          </div>
-        </div>
-      </div>
+                {{-- Breadcrumb --}}
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="bg-white border rounded-2 px-3 py-2 w-100 d-flex align-items-center">
+                            <a href="{{ route('superadmin.dashboard') }}"
+                                class="text-decoration-none text-primary">Beranda</a>
+                            <span class="text-muted ms-1">/ Memo</span>
+                        </div>
+                    </div>
+                </div>
 
-      @php
-        // Normalisasi nilai agar placeholder muncul bila tidak valid/kosong
-        $allowedStatus = ['pending','approved','rejected'];
-        $status   = old('status', request('status'));
-        if (!in_array($status, $allowedStatus, true)) $status = null;
+                @php
+                    // Normalisasi nilai agar placeholder muncul bila tidak valid/kosong
+                    $allowedStatus = ['pending', 'approve', 'reject'];
+                    $status = old('status', request('status'));
+                    if (!in_array($status, $allowedStatus, true)) {
+                        $status = null;
+                    }
 
-        $allowedDiv   = ['IT','HR','Finance'];
-        $division = old('division', request('division'));
-        if (!in_array($division, $allowedDiv, true)) $division = null;
-      @endphp
+                    $allowedDiv = $kode->toArray();
+                    $kode = old('kode', request('kode'));
+                    if (!in_array($kode, $allowedDiv, true)) {
+                        $kode = null;
+                    }
+                @endphp
 
-      {{-- Row Filter --}}
-      <form class="row g-2 align-items-center" method="GET" action="{{ route('superadmin.memo.index') }}">
-        {{-- Status --}}
-        <div class="col-12 col-md-auto">
-          <select class="form-select rounded-3" name="status" aria-label="Status">
-            <option value="" @selected(is_null($status)) disabled>Status</option>
-            <option value="pending"  @selected($status === 'pending')>Pending</option>
-            <option value="approved" @selected($status === 'approved')>Approved</option>
-            <option value="rejected" @selected($status === 'rejected')>Rejected</option>
-          </select>
-        </div>
+                {{-- Row Filter --}}
+                <form class="row g-2 align-items-center" method="GET" action="{{ route('superadmin.memo.index') }}">
+                    <div class="col-auto">
+                        <select name="per_page" class="form-select rounded-3" style="max-width:100px;"
+                            onchange="this.form.submit()">
+                            <option value="10" {{ request('per_page') == 10 ? 'selected' : '' }}>10</option>
+                            <option value="25" {{ request('per_page') == 25 ? 'selected' : '' }}>25</option>
+                            <option value="50" {{ request('per_page') == 50 ? 'selected' : '' }}>50</option>
+                            <option value="100" {{ request('per_page') == 100 ? 'selected' : '' }}>100</option>
+                        </select>
+                    </div>
 
-        {{-- Tanggal Awal --}}
-        <div class="col-12 col-md-auto">
-          <input type="date" class="form-control rounded-3" name="start_date"
-                 value="{{ request('start_date') }}" placeholder="Tanggal Awal" aria-label="Tanggal Awal">
-        </div>
+                    {{-- Status --}}
+                    <div class="col-12 col-md-auto">
+                        <select class="form-select rounded-3" name="status" aria-label="Status">
+                            <option value="" @selected(is_null($status))>Semua Status</option>
+                            <option value="pending" @selected($status === 'pending')>Diproses</option>
+                            <option value="approve" @selected($status === 'approve')>Diterima</option>
+                            <option value="reject" @selected($status === 'reject')>Ditolak</option>
+                            <option value="correction" @selected($status === 'correction')>Dikoreksi</option>
+                        </select>
+                    </div>
 
-        {{-- Separator panah (hidden di mobile) --}}
-        <div class="col-auto d-none d-md-flex align-items-center">
-          <span class="mx-1">→</span>
-        </div>
+                    {{-- Tanggal Awal --}}
+                    <div class="col-12 col-md-auto">
+                        <input type="date" class="form-control rounded-3" name="tgl_dibuat_awal"
+                            value="{{ request('tgl_dibuat_awal') }}" placeholder="Tanggal Awal" aria-label="Tanggal Awal">
+                    </div>
 
-        {{-- Tanggal Akhir --}}
-        <div class="col-12 col-md-auto">
-          <input type="date" class="form-control rounded-3" name="end_date"
-                 value="{{ request('end_date') }}" placeholder="Tanggal Akhir" aria-label="Tanggal Akhir">
-        </div>
+                    {{-- Separator panah (hidden di mobile) --}}
+                    <div class="col-auto d-none d-md-flex align-items-center">
+                        <span class="mx-1">→</span>
+                    </div>
 
-        {{-- Pencarian --}}
-        <div class="col-12 col-md">
-          <div class="input-group">
-            <span class="input-group-text rounded-start-3"><i class="fas fa-search"></i></span>
-            <input type="text" class="form-control rounded-end-3" name="q"
-                   value="{{ request('q') }}" placeholder="Cari" aria-label="Cari">
-          </div>
-        </div>
+                    {{-- Tanggal Akhir --}}
+                    <div class="col-12 col-md-auto">
+                        <input type="date" class="form-control rounded-3" name="tgl_dibuat_akhir"
+                            value="{{ request('tgl_dibuat_akhir') }}" placeholder="Tanggal Akhir"
+                            aria-label="Tanggal Akhir">
+                    </div>
 
-        {{-- Divisi --}}
-        <div class="col-12 col-md-auto">
-          <select class="form-select rounded-3" name="division" aria-label="Pilih Divisi">
-            <option value="" @selected(is_null($division)) disabled>Pilih Divisi</option>
-            <option value="IT"      @selected($division === 'IT')>IT</option>
-            <option value="HR"      @selected($division === 'HR')>HR</option>
-            <option value="Finance" @selected($division === 'Finance')>Finance</option>
-          </select>
-        </div>
+                    {{-- Pencarian --}}
+                    <div class="col-12 col-md">
+                        <div class="input-group">
+                            <span class="input-group-text rounded-start-3"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control rounded-end-3" name="search"
+                                value="{{ request('search') }}" placeholder="Cari" aria-label="Cari">
+                        </div>
+                    </div>
 
-        {{-- Tombol Filter --}}
-        <div class="col-12 col-md-auto">
-          <button type="submit" class="btn btn-primary rounded-3">
-            <i class="fas fa-filter me-1"></i>Filter
-          </button>
-        </div>
-      </form>
+                    {{-- Divisi --}}
+                    <div class="col-12 col-md-auto">
+                        <select class="form-select rounded-3" name="kode" id="kode" aria-label="Pilih Divisi">
+                            <option value="pilih" {{ !request()->filled('kode') ? 'selected' : '' }}>Semua Divisi
+                            </option>
+                            @foreach ($allowedDiv ?? collect() as $k)
+                                <option value="{{ $k }}" {{ request('kode') == $k ? 'selected' : '' }}>
+                                    {{ $k }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
 
-      {{-- Tabel --}}
-      <div class="table-responsive mt-3">
-        <table class="table table-bordered custom-table-bagian">
-          <thead>
-            <tr>
-              <th class="text-center" style="width:5%;">No</th>
-              <th class="text-center" style="width:25%;">Nama Dokumen</th>
-              <th class="text-center" style="width:12%;">Tanggal Memo</th>
-              <th class="text-center" style="width:5%;">Seri</th>
-              <th class="text-center" style="width:25%;">Dokumen</th>
-              <th class="text-center" style="width:12%;">Tanggal Disahkan</th>
-              <th class="text-center" style="width:10%;">Pengirim</th>
-              <th class="text-center" style="width:8%;">Status</th>
-              <th class="text-center" style="width:8%;">Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            @foreach ($memos as $index => $memo)
-                    <tr>
-                        <td class="nomor">{{ $index + 1 }}</td>
-                        <td class="nama-dokumen 
+                    {{-- Tombol Filter --}}
+                    <div class="col-12 col-md-auto">
+                        <button type="submit" class="btn btn-primary rounded-3">
+                            <i class="fas fa-filter me-1"></i>Filter
+                        </button>
+                    </div>
+                </form>
+
+                {{-- Tabel --}}
+                <div class="table-responsive mt-3">
+                    <table class="table table-bordered custom-table-bagian">
+                        <thead>
+                            <tr>
+                                <th class="text-center" style="width:5%;">No</th>
+                                <th class="text-center" style="width:25%;">Perihal</th>
+                                <th class="text-center" style="width:12%;">Tanggal Memo</th>
+                                <th class="text-center" style="width:25%;">Dokumen</th>
+                                <th class="text-center" style="width:12%;">Tanggal Disahkan</th>
+                                <th class="text-center" style="width:10%;">Pengirim</th>
+                                <th class="text-center" style="width:8%;">Status</th>
+                                <th class="text-center" style="width:8%;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($memos as $index => $memo)
+                                <tr>
+                                    <td class="nomor">{{ ($memos->firstItem() ?? 0) + $index }}</td>
+                                    <td class="nama-dokumen
                                 {{ $memo->status == 'reject' ? 'text-danger' : ($memo->status == 'correction' ? 'text-warning' : ($memo->status == 'approve' ? 'text-success' : '')) }}"
-                            style="{{ $memo->status == 'pending' ? 'color: #0dcaf0;' : '' }}">
-                            {{ $memo->judul ?? '-' }}
-                        </td>
-                        <td>{{ \Carbon\Carbon::parse($memo->tgl_dibuat)->format('d-m-Y') ?? '-'}}</td>
-                        <td>{{ $memo->seri_surat ?? '-' }}</td>
-                        <td>{{ $memo->nomor_memo ?? '-' }}</td>
-                        <td>{{ $memo->tgl_disahkan ? \Carbon\Carbon::parse($memo->tgl_disahkan)->format('d-m-Y') : '-' }}</td>
-                        <td>{{ $memo->kode ?? '-' }}</td>
-                        </td>
-                        <td>
-                            @if ($memo->status == 'reject')
-                                <span class="badge bg-danger">Ditolak</span>
-                            @elseif ($memo->status == 'pending')
-                                <span class="badge bg-info">Diproses</span>
-                            @elseif ($memo->status == 'correction')
-                                <span class="badge bg-warning">Dikoreksi</span>
-                            @else
-                                <span class="badge bg-success">Diterima</span>
-                            @endif
-                        </td>
-                                                 <td class="text-center">
-                             <div class="d-flex justify-content-center gap-2">
-                                 @if ($memo->status == 'approve' || $memo->status == 'reject')
-                                     {{-- Button Arsip untuk status approve/reject --}}
-                                     <form action="{{ route('arsip.archive', ['document_id' => $memo->id_memo, 'jenis_document' => 'Memo']) }}" 
-                                           method="POST" style="display: inline;">
-                                         @csrf
-                                         @method('POST')
-                                         <button type="submit" 
-                                                 class="btn btn-sm rounded-circle text-white border-0"
-                                                 style="background-color:#FFAD46; width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
-                                                 title="Arsip"
-                                                 onclick="return confirm('Apakah Anda yakin ingin mengarsipkan memo ini?')">
-                                             <i class="fa-solid fa-archive"></i>
-                                         </button>
-                                     </form>
-                                 @else
-                                     {{-- Button Arsip untuk status pending/correction --}}
-                                     <button type="button" 
-                                             class="btn btn-sm rounded-circle text-white border-0"
-                                             style="background-color:#FFAD46; width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
-                                             onclick="showArsipModal({{ $memo->id_memo }}, '{{ $memo->judul ?? $memo->nama_dokumen }}')"
-                                             title="Arsip">
-                                         <i class="fa-solid fa-archive"></i>
-                                     </button>
-                                     
-                                     {{-- Button Delete --}}
-                                     <button type="button" 
-                                             class="btn btn-sm rounded-circle text-white border-0"
-                                             style="background-color:#F25961; width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
-                                             onclick="showDeleteModal({{ $memo->id_memo }}, '{{ $memo->judul ?? $memo->nama_dokumen }}')"
-                                             title="Hapus">
-                                         <i class="fa-solid fa-trash"></i>
-                                     </button>
-                                 @endif
-                             </div>
-                         </td>
-                    </tr>
-                @endforeach
-          </tbody>
-        </table>
-      </div>
-               <!-- Pagination -->
-        <div class="d-flex justify-content-end mt-3">
-            {{ $memos->onEachSide(1)->links('pagination::bootstrap-5') }}
+                                        style="{{ $memo->status == 'pending' ? 'color: #0dcaf0;' : '' }}">
+                                        {{ Str::limit($memo->judul ?? '-', 40, '...') }}
+                                    </td>
+                                    <td>{{ \Carbon\Carbon::parse($memo->tgl_dibuat)->format('d-m-Y') ?? '-' }}</td>
+                                    <td>{{ $memo->nomor_memo ?? '-' }}</td>
+                                    <td>{{ $memo->tgl_disahkan ? \Carbon\Carbon::parse($memo->tgl_disahkan)->format('d-m-Y') : '-' }}
+                                    </td>
+                                    <td class="text-center">{{ $memo->kode ?? '-' }}</td>
+                                    </td>
+                                    <td class="text-center">
+                                        @if ($memo->status == 'reject')
+                                            <span class="badge bg-danger px-3 py-2">Ditolak</span>
+                                        @elseif ($memo->status == 'pending')
+                                            <span class="badge bg-info px-3 py-2">Diproses</span>
+                                        @elseif ($memo->status == 'correction')
+                                            <span class="badge bg-warning px-3 py-2">Dikoreksi</span>
+                                        @else
+                                            <span class="badge bg-success px-3 py-2">Diterima</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-flex justify-content-center gap-2">
+
+                                            @if ($memo->status == 'pending' || $memo->status == 'correction')
+                                                <button type="button"
+                                                    class="btn btn-sm rounded-circle text-white border-0 bg-secondary"
+                                                    style="width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
+                                                    onclick="window.location.href='{{ route('memo.edit', ['id_memo' => $memo->id_memo]) }}'">
+                                                    <i class="fa-solid fa-pencil fa-lg"></i>
+                                                </button>
+                                            @elseif ($memo->status == 'approve' || $memo->status == 'reject')
+                                                {{-- Button Arsip untuk status approve reject --}}
+                                                <button type="button"
+                                                    class="btn btn-sm rounded-circle text-white border-0"
+                                                    style="background-color:#FFAD46; width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
+                                                    onclick="showArsipModal({{ $memo->id_memo }}, '{{ $memo->judul ?? $memo->nama_dokumen }}')"
+                                                    title="Arsip">
+                                                    <i class="fa-solid fa-archive fa-lg"></i>
+                                                </button>
+                                            @endif
+                                            {{-- Button Delete --}}
+                                            <button type="button" class="btn btn-sm rounded-circle text-white border-0"
+                                                style="background-color:#F25961; width:30px; height:30px; display:flex; align-items:center; justify-content:center;"
+                                                onclick="showDeleteModal({{ $memo->id_memo }}, '{{ $memo->judul ?? $memo->nama_dokumen }}')"
+                                                title="Hapus">
+                                                <i class="fa-solid fa-trash fa-lg"></i>
+                                            </button>
+
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end mt-3">
+                    {{ $memos->onEachSide(1)->appends(request()->query())->links('pagination::bootstrap-5') }}
+                </div>
+            </div>
         </div>
-
     </div>
-  </div>
-</div>
 
 
-{{-- Modal Arsip --}}
-<div class="modal fade" id="arsipModal" tabindex="-1" aria-labelledby="arsipModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="arsipModalLabel">Arsip Memo</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>Apakah Anda yakin ingin mengarsipkan memo <strong id="arsipMemoTitle"></strong>?</p>
-        <p class="text-muted">Memo yang diarsipkan akan dipindahkan ke arsip dan tidak akan muncul di daftar utama.</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-        <button type="button" class="btn btn-warning" onclick="confirmArsip()">
-          <i class="fa-solid fa-archive me-1"></i>Arsip
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{{-- Modal Delete --}}
-<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="deleteModalLabel">Hapus Memo</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>Apakah Anda yakin ingin menghapus memo <strong id="deleteMemoTitle"></strong>?</p>
-        <p class="text-danger"><i class="fa-solid fa-exclamation-triangle me-1"></i>Tindakan ini tidak dapat dibatalkan!</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-        <button type="button" class="btn btn-danger" onclick="confirmDelete()">
-          <i class="fa-solid fa-trash me-1"></i>Hapus
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-let currentMemoId = null;
 
 
-// Function untuk menampilkan modal arsip
-function showArsipModal(memoId, memoTitle) {
-  currentMemoId = memoId;
-  document.getElementById('arsipMemoTitle').textContent = memoTitle;
-  
-  const modal = new bootstrap.Modal(document.getElementById('arsipModal'));
-  modal.show();
-}
-
-// Function untuk menampilkan modal delete
-function showDeleteModal(memoId, memoTitle) {
-  currentMemoId = memoId;
-  document.getElementById('deleteMemoTitle').textContent = memoTitle;
-  
-  const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
-  modal.show();
-}
-
-// Function untuk konfirmasi arsip
-function confirmArsip() {
-  if (!currentMemoId) return;
-  
-  // Implement AJAX call untuk arsip
-  fetch(`/superadmin/memo/${currentMemoId}/arsip`, {
-    method: 'POST',
-    headers: {
-      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-      'Content-Type': 'application/json',
-    }
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      // Close modal
-      const modal = bootstrap.Modal.getInstance(document.getElementById('arsipModal'));
-      modal.hide();
-      
-      // Show success message
-      showNotification('Memo berhasil diarsipkan', 'success');
-      
-      // Reload page or update table
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    } else {
-      showNotification('Gagal mengarsipkan memo', 'error');
-    }
-  })
-  .catch(error => {
-    showNotification('Terjadi kesalahan', 'error');
-  });
-}
-
-// Function untuk konfirmasi delete
-function confirmDelete() {
-  if (!currentMemoId) return;
-  
-  // Implement AJAX call untuk delete
-  fetch(`/superadmin/memo/${currentMemoId}`, {
-    method: 'DELETE',
-    headers: {
-      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-      'Content-Type': 'application/json',
-    }
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      // Close modal
-      const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
-      modal.hide();
-      
-      // Show success message
-      showNotification('Memo berhasil dihapus', 'success');
-      
-      // Reload page or update table
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    } else {
-      showNotification('Gagal menghapus memo', 'error');
-    }
-  })
-  .catch(error => {
-    showNotification('Terjadi kesalahan', 'error');
-  });
-}
-
-// Function untuk menampilkan notifikasi
-function showNotification(message, type) {
-  // Implement sesuai dengan library notifikasi yang digunakan
-  // Contoh menggunakan SweetAlert atau library lain
-  if (typeof Swal !== 'undefined') {
-    Swal.fire({
-      title: type === 'success' ? 'Berhasil!' : 'Error!',
-      text: message,
-      icon: type,
-      timer: 3000,
-      showConfirmButton: false
-    });
-  } else {
-    // Fallback alert
-    alert(message);
-  }
-}
-</script>
 @endsection
+
+@push('scripts')
+    <script>
+        // function menampilkan modal arsip dengan SweetAlert
+        function showArsipModal(memoId, memoTitle) {
+            currentMemoId = memoId;
+
+            Swal.fire({
+                title: 'Arsip Memo?',
+                html: `Apakah Anda yakin ingin mengarsipkan memo <strong>${memoTitle}</strong>?<br><br>
+                        <span class="text-muted">Memo yang diarsipkan akan dipindahkan ke arsip dan tidak akan muncul di daftar utama.</span>`,
+                icon: 'question',
+                showCancelButton: true,
+                reverseButtons: true,
+                focusCancel: true,
+                confirmButtonText: '<i class="fa-solid fa-archive me-1"></i>Arsip',
+                cancelButtonText: 'Batal',
+                buttonsStyling: false,
+                customClass: {
+                    actions: 'swal2-actions-custom',
+                    confirmButton: 'btn btn-warning px-4 py-2',
+                    cancelButton: 'btn btn-outline-secondary px-4 py-2'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) confirmArsip();
+            });
+        }
+
+        // utk nge handle confirm arsip
+        function confirmArsip() {
+            if (!currentMemoId) return;
+
+            // Show loading state
+            Swal.fire({
+                title: 'Mengarsipkan...',
+                text: 'Mohon tunggu sebentar',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            // Implement AJAX call untuk arsip
+            fetch(`/arsip/${currentMemoId}/Memo/simpan`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        Swal.fire({
+                            title: 'Berhasil!',
+                            text: data.message || 'Memo berhasil diarsipkan',
+                            icon: 'success',
+                            confirmButtonText: 'OK',
+                            customClass: {
+                                confirmButton: 'btn btn-success px-4 py-2'
+                            },
+                            buttonsStyling: false
+                        }).then(() => {
+                            // Reload page
+                            window.location.reload();
+                        });
+                    } else {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: data.message || 'Gagal mengarsipkan memo',
+                            icon: 'error',
+                            confirmButtonText: 'OK',
+                            customClass: {
+                                confirmButton: 'btn btn-danger px-4 py-2'
+                            },
+                            buttonsStyling: false
+                        });
+                    }
+                })
+                .catch(error => {
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'Terjadi kesalahan saat mengarsipkan memo',
+                        icon: 'error',
+                        confirmButtonText: 'OK',
+                        customClass: {
+                            confirmButton: 'btn btn-danger px-4 py-2'
+                        },
+                        buttonsStyling: false
+                    });
+                });
+        }
+
+        let currentMemoId = null;
+
+        // Select all functionality
+        document.getElementById('selectAll')?.addEventListener('change', function() {
+            document.querySelectorAll('.selectItem').forEach(cb => cb.checked = this.checked);
+            toggleBulkBar();
+        });
+
+        // Toggle bulk bar
+        function toggleBulkBar() {
+            const anyChecked = Array.from(document.querySelectorAll('.selectItem')).some(cb => cb.checked);
+            document.getElementById('bulkActions').style.display = anyChecked ? 'flex' : 'none';
+        }
+
+        // Listen per-item checkbox
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('selectItem')) toggleBulkBar();
+        });
+
+        // Function untuk menampilkan modal restore
+        function showRestoreModal(memoId, memoTitle) {
+            currentMemoId = memoId;
+            document.getElementById('restoreMemoTitle').textContent = memoTitle;
+
+            const modal = new bootstrap.Modal(document.getElementById('restoreModal'));
+            modal.show();
+        }
+
+        // Function untuk menampilkan modal delete dengan SweetAlert
+        function showDeleteModal(memoId, memoTitle) {
+            currentMemoId = memoId;
+
+            Swal.fire({
+                title: 'Hapus Memo?',
+                html: `Apakah Anda yakin ingin menghapus memo <strong>${memoTitle}</strong>?<br><br>
+                    <span class="text-danger">
+                    Memo ini akan masuk ke laman <strong>Pemulihan</strong> dan dapat dikembalikan sewaktu-waktu.</span>`,
+                icon: 'warning',
+                showCancelButton: true,
+                reverseButtons: true,
+                focusCancel: true,
+                confirmButtonText: '<i class="fa-solid fa-trash me-1"></i>Hapus',
+                cancelButtonText: 'Batal',
+                buttonsStyling: false,
+                customClass: {
+                    actions: 'swal2-actions-custom',
+                    confirmButton: 'btn btn-danger px-4 py-2',
+                    cancelButton: 'btn btn-outline-warning px-4 py-2'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) confirmDelete();
+            });
+        }
+
+
+        // Function untuk konfirmasi restore
+        function confirmRestore() {
+            if (!currentMemoId) return;
+
+            // Implement AJAX call untuk restore
+            fetch(`/memo/restore/${currentMemoId}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Close modal
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('restoreModal'));
+                        modal.hide();
+
+                        // Show success message
+                        showNotification('Memo berhasil dipulihkan', 'success');
+
+                        // Reload page or update table
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        showNotification('Gagal memulihkan memo', 'error');
+                    }
+                })
+                .catch(error => {
+                    showNotification('Terjadi kesalahan', 'error');
+                });
+        }
+
+        // Function untuk konfirmasi delete
+        function confirmDelete() {
+            if (!currentMemoId) return;
+
+            // Show loading state
+            Swal.fire({
+                title: 'Menghapus...',
+                text: 'Mohon tunggu sebentar',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            // Implement AJAX call untuk delete permanen
+            fetch(`/memo/delete/${currentMemoId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        Swal.fire({
+                            title: 'Berhasil!',
+                            text: 'Memo berhasil dihapus',
+                            icon: 'success',
+                            confirmButtonText: 'OK',
+                            customClass: {
+                                confirmButton: 'btn btn-success px-4 py-2'
+                            },
+                            buttonsStyling: false
+                        }).then(() => {
+                            // Reload page
+                            window.location.reload();
+                        });
+                    } else {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Gagal menghapus memo',
+                            icon: 'error',
+                            confirmButtonText: 'OK',
+                            customClass: {
+                                confirmButton: 'btn btn-danger px-4 py-2'
+                            },
+                            buttonsStyling: false
+                        });
+                    }
+                })
+                .catch(error => {
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'Terjadi kesalahan',
+                        icon: 'error',
+                        confirmButtonText: 'OK',
+                        customClass: {
+                            confirmButton: 'btn btn-danger px-4 py-2'
+                        },
+                        buttonsStyling: false
+                    });
+                });
+        }
+
+        // Function untuk menampilkan notifikasi
+        function showNotification(message, type) {
+            // Implement sesuai dengan library notifikasi yang digunakan
+            // Contoh menggunakan SweetAlert atau library lain
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: type === 'success' ? 'Berhasil!' : 'Error!',
+                    text: message,
+                    icon: type,
+                    showConfirmButton: true,
+                    customClass: {
+                        confirmButton: 'btn btn-success px-4 py-2',
+                    },
+                });
+            } else {
+                // Fallback alert
+                alert(message);
+            }
+        }
+
+        // Success flash messages
+        document.addEventListener('DOMContentLoaded', function() {
+            @if (session('success') === 'Memo terpilih berhasil dihapus permanen.')
+                showNotification('Memo terpilih berhasil dihapus permanen.', 'success');
+            @endif
+
+            @if (session('success') === 'Memo terpilih berhasil dipulihkan.')
+                showNotification('Memo terpilih berhasil dipulihkan.', 'success');
+            @endif
+
+            @if (session('success') === 'Dokumen berhasil dibuat.')
+                showNotification("Memo berhasil dibuat dan disimpan.", "success");
+            @endif
+
+            @if (session('success') === 'Memo berhasil diubah.')
+                showNotification("Memo berhasil diubah dan disimpan.", "success");
+            @endif
+            @if (session('error'))
+                showNotification("Gagal membuat memo. Silahkan periksa kembali data yang dimasukkan", "error");
+            @endif
+        });
+    </script>
+@endpush

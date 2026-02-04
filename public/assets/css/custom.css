@@ -1,0 +1,112 @@
+/* ===== Mobile override: sidebar slide-in ===== */
+@media (max-width: 991.98px) {
+  /* Sidebar default: tersembunyi */
+  .sidebar,
+  .sidebar[data-background-color="white"] {
+    transform: translateX(-100%) !important;
+    transition: transform .3s ease !important;
+  }
+
+  /* Sidebar saat aktif: tampil */
+  .sidebar.active,
+  .sidebar.active[data-background-color="white"] {
+    transform: translateX(0) !important;
+    z-index: 1050 !important;
+  }
+
+  /* Main panel full, jangan geser */
+  .main-panel {
+    width: 100% !important;
+    float: none !important;
+  }
+
+  /* Backdrop */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.25);
+    z-index: 1049;
+    display: none;
+  }
+  .sidebar-backdrop.show { display: block; }
+
+  /* Paksa logo tampil di mobile meski body pakai sidebar_minimize */
+  .sidebar .logo-header,
+  .sidebar_minimize .sidebar .sidebar-logo,
+  .sidebar_minimize .sidebar .logo-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 82px !important;
+    padding: 16px 20px !important;
+  }
+  .sidebar .logo-header img {
+    max-height: 48px !important;
+    width: auto !important;
+  }
+}
+/* ===== Toggle sidebar: hanya untuk tombol di navbar ===== */
+/* === KUNCI TAMPILAN IKON HAMBURGER DI NAVBAR (WEB & MOBILE) === */
+
+/* Matikan semua efek bawaan Bootstrap/Kaiadmin pada tombol toggle */
+.navbar .toggle-sidebar,
+.navbar button.toggle-sidebar,
+.navbar .btn.toggle-sidebar {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+}
+
+/* Pastikan state fokus/aktif/hover TIDAK mengubah apapun (hilang kotak hitam) */
+.navbar .toggle-sidebar:hover,
+.navbar .toggle-sidebar:focus,
+.navbar .toggle-sidebar:active,
+.navbar .toggle-sidebar:focus-visible,
+.navbar .btn.toggle-sidebar:hover,
+.navbar .btn.toggle-sidebar:focus,
+.navbar .btn.toggle-sidebar:active,
+.navbar .btn.toggle-sidebar:focus-visible {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Kunci tampilan kapsul ungu pada ikon, apapun state & versi FA (FA5/FA6) */
+.navbar .toggle-sidebar i.fa-bars,
+.navbar .toggle-sidebar i.fa-solid.fa-bars {
+  background: #E9E6FB !important;
+  color: #BEA6EB !important;
+  padding: 10px !important;
+  border-radius: 10px !important;
+  display: inline-block !important;
+}
+
+/* Tetap sama saat hover/active/focus/aria-expanded (tidak “berubah-ubah”) */
+.navbar .toggle-sidebar:hover i.fa-bars,
+.navbar .toggle-sidebar:active i.fa-bars,
+.navbar .toggle-sidebar:focus i.fa-bars,
+.navbar .toggle-sidebar:focus-visible i.fa-bars,
+.navbar .toggle-sidebar[aria-expanded="true"] i.fa-bars,
+.navbar .toggle-sidebar:hover i.fa-solid.fa-bars,
+.navbar .toggle-sidebar:active i.fa-solid.fa-bars,
+.navbar .toggle-sidebar:focus i.fa-solid.fa-bars,
+.navbar .toggle-sidebar:focus-visible i.fa-solid.fa-bars,
+.navbar .toggle-sidebar[aria-expanded="true"] i.fa-solid.fa-bars {
+  background: #E9E6FB !important;
+  color: #BEA6EB !important;
+  transform: none !important;
+}
+
+
