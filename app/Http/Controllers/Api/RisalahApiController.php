@@ -443,6 +443,8 @@ class RisalahApiController extends Controller
                         ]);
 
                         Notifikasi::create([
+                            'id_document'    => $risalah->id_risalah,
+                            'jenis_document' => 'risalah',
                             'judul' => 'Risalah Masuk',
                             'judul_document' => $risalah->judul,
                             'id_user' => $targetUser->id,
@@ -458,6 +460,8 @@ class RisalahApiController extends Controller
 
                     // Notifikasi ke pembuat
                     Notifikasi::create([
+                        'id_document'    => $risalah->id_risalah,
+                        'jenis_document' => 'risalah',
                         'judul' => 'Risalah Disetujui',
                         'judul_document' => $risalah->judul,
                         'id_user' => $risalah->pembuat,
@@ -485,6 +489,8 @@ class RisalahApiController extends Controller
                     $risalah->tgl_disahkan = now();
 
                     Notifikasi::create([
+                        'id_document'    => $risalah->id_risalah,
+                        'jenis_document' => 'risalah',
                         'judul' => 'Risalah Ditolak',
                         'judul_document' => $risalah->judul,
                         'id_user' => $risalah->pembuat,
@@ -503,6 +509,8 @@ class RisalahApiController extends Controller
                     $risalah->tgl_disahkan = now();
 
                     Notifikasi::create([
+                        'id_document'    => $risalah->id_risalah,
+                        'jenis_document' => 'risalah',
                         'judul' => 'Risalah Perlu Revisi',
                         'judul_document' => $risalah->judul,
                         'id_user' => $risalah->pembuat,

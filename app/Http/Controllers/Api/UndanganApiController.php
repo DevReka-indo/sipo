@@ -380,6 +380,8 @@ class UndanganApiController extends Controller
                         }
 
                         Notifikasi::create([
+                            'id_document'    => $undangan->id_undangan,
+                            'jenis_document' => 'undangan',
                             'judul' => "Undangan Masuk",
                             'judul_document' => $undangan->judul,
                             'id_user' => $tujuanId,
@@ -391,6 +393,8 @@ class UndanganApiController extends Controller
 
                     // notif ke pembuat (sesuai web controller)
                     Notifikasi::create([
+                        'id_document'    => $undangan->id_undangan,
+                        'jenis_document' => 'undangan',
                         'judul' => "Undangan Disetujui dan Telah Terkirim",
                         'judul_document' => $undangan->judul,
                         'id_user' => $undangan->pembuat,
@@ -405,6 +409,8 @@ class UndanganApiController extends Controller
                     $undangan->tgl_disahkan = now();
 
                     Notifikasi::create([
+                        'id_document'    => $undangan->id_undangan,
+                        'jenis_document' => 'undangan',
                         'judul' => "Undangan Ditolak",
                         'judul_document' => $undangan->judul,
                         'id_user' => $undangan->pembuat,
@@ -419,6 +425,8 @@ class UndanganApiController extends Controller
                     $undangan->tgl_disahkan = now();
 
                     Notifikasi::create([
+                        'id_document'    => $undangan->id_undangan,
+                        'jenis_document' => 'undangan',
                         'judul' => "Undangan Perlu Dikoreksi",
                         'judul_document' => $undangan->judul,
                         'id_user' => $undangan->pembuat,

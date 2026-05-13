@@ -324,6 +324,8 @@ class MemoApiController extends Controller
                         );
 
                         Notifikasi::create([
+                            'id_document'    => $memo->id_memo,
+                            'jenis_document' => 'memo',
                             'judul'          => 'Memo Masuk',
                             'judul_document' => $memo->judul,
                             'id_user'        => (int) $tujuanId,
@@ -339,6 +341,8 @@ class MemoApiController extends Controller
                         'judul_document' => $memo->judul,
                         'id_user'        => $memo->pembuat,
                         'updated_at'     => now(),
+                        'id_document'    => $memo->id_memo,
+                        'jenis_document' => 'memo',
                     ]);
 
                     $push->sendToUser($memo->pembuat, 'Memo Disetujui', $memo->judul);
@@ -359,6 +363,8 @@ class MemoApiController extends Controller
                     $memo->save();
 
                     Notifikasi::create([
+                        'id_document'    => $memo->id_memo,
+                        'jenis_document' => 'memo',
                         'judul'          => 'Memo Ditolak',
                         'judul_document' => $memo->judul,
                         'id_user'        => $memo->pembuat,
@@ -379,6 +385,8 @@ class MemoApiController extends Controller
                     $memo->save();
 
                     Notifikasi::create([
+                        'id_document'    => $memo->id_memo,
+                        'jenis_document' => 'memo',
                         'judul'          => 'Memo Perlu Revisi',
                         'judul_document' => $memo->judul,
                         'id_user'        => $memo->pembuat,

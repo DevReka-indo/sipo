@@ -6,7 +6,8 @@ use Illuminate\Support\ServiceProvider;
 use Carbon\Carbon;
 use Carbon\CarbonInterval;
 use App\Services\QrCodeService;
-
+use App\Models\Notifikasi;
+use App\Observers\NotifikasiObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,5 +28,6 @@ class AppServiceProvider extends ServiceProvider
     {
         Carbon::setLocale('id');
         CarbonInterval::setLocale('id');
+        Notifikasi::observe(NotifikasiObserver::class);
     }
 }
