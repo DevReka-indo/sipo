@@ -388,7 +388,7 @@ class UndanganApiController extends Controller
                             'updated_at' => now(),
                         ]);
 
-                        $push->sendToUser($tujuanId, 'Undangan Masuk', $undangan->judul);
+                        // $push->sendToUser($tujuanId, 'Undangan Masuk', $undangan->judul);
                     }
 
                     // notif ke pembuat (sesuai web controller)
@@ -400,7 +400,7 @@ class UndanganApiController extends Controller
                         'id_user' => $undangan->pembuat,
                         'updated_at' => now(),
                     ]);
-                    $push->sendToUser($undangan->pembuat, 'Undangan Disetujui dan Telah Terkirim', $undangan->judul);
+                    // $push->sendToUser($undangan->pembuat, 'Undangan Disetujui dan Telah Terkirim', $undangan->judul);
 
                 // =========================
                 // REJECT
@@ -416,7 +416,7 @@ class UndanganApiController extends Controller
                         'id_user' => $undangan->pembuat,
                         'updated_at' => now(),
                     ]);
-                    $push->sendToUser($undangan->pembuat, 'Undangan Ditolak', $undangan->judul);
+                    // $push->sendToUser($undangan->pembuat, 'Undangan Ditolak', $undangan->judul);
 
                 // =========================
                 // CORRECTION
@@ -432,7 +432,7 @@ class UndanganApiController extends Controller
                         'id_user' => $undangan->pembuat,
                         'updated_at' => now(),
                     ]);
-                    $push->sendToUser($undangan->pembuat, 'Undangan Perlu Dikoreksi', $undangan->judul);
+                    // $push->sendToUser($undangan->pembuat, 'Undangan Perlu Dikoreksi', $undangan->judul);
                 }
 
                 // Simpan catatan

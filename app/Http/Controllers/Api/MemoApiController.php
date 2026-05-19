@@ -332,7 +332,7 @@ class MemoApiController extends Controller
                             'updated_at'     => now(),
                         ]);
 
-                        $push->sendToUser((int) $tujuanId, 'Memo Masuk', $memo->judul);
+                        // $push->sendToUser((int) $tujuanId, 'Memo Masuk', $memo->judul);
                     }
 
                     // Notif ke pembuat
@@ -345,7 +345,7 @@ class MemoApiController extends Controller
                         'jenis_document' => 'memo',
                     ]);
 
-                    $push->sendToUser($memo->pembuat, 'Memo Disetujui', $memo->judul);
+                    // $push->sendToUser($memo->pembuat, 'Memo Disetujui', $memo->judul);
 
                     return response()->json([
                         'status'  => 'success',
@@ -371,7 +371,7 @@ class MemoApiController extends Controller
                         'updated_at'     => now(),
                     ]);
 
-                    $push->sendToUser($memo->pembuat, 'Memo Ditolak', $memo->judul);
+                    // $push->sendToUser($memo->pembuat, 'Memo Ditolak', $memo->judul);
 
                     return response()->json([
                         'status'  => 'success',
@@ -393,7 +393,7 @@ class MemoApiController extends Controller
                         'updated_at'     => now(),
                     ]);
 
-                    $push->sendToUser($memo->pembuat, 'Memo Perlu Revisi', $memo->judul);
+                    // $push->sendToUser($memo->pembuat, 'Memo Perlu Revisi', $memo->judul);
 
                     return response()->json([
                         'status'  => 'success',

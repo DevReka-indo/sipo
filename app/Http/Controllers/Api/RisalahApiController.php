@@ -22,56 +22,34 @@ use App\Models\User;
 
 class RisalahApiController extends Controller
 {
-
     public function index(Request $request)
     {
         $user = Auth::user();
         $userId = (int) $user->id;
         $uid = (string) $userId;
 
-        $risalahDiarsipkan = Arsip::where('user_id', $userId)
-            ->where('jenis_document', 'App\Models\Risalah')
-            ->pluck('document_id')
-            ->toArray();
+        $risalahDiarsipkan = Arsip::where('user_id', $userId)->where('jenis_document', 'App\Models\Risalah')->pluck('document_id')->toArray();
 
-        $allowedSortColumns = [
-            'created_at',
-            'tgl_disahkan',
-            'tgl_dibuat',
-            'nomor_risalah',
-            'judul',
-        ];
+        $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_risalah', 'judul'];
 
-        $sortBy = in_array($request->get('sort_by'), $allowedSortColumns)
-            ? $request->get('sort_by')
-            : 'created_at';
+        $sortBy = in_array($request->get('sort_by'), $allowedSortColumns) ? $request->get('sort_by') : 'created_at';
 
-        $sortDirection = $request->get('sort_direction', 'desc') === 'asc'
-            ? 'asc'
-            : 'desc';
+        $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
 
         $query = Risalah::with('user')
             ->whereNotIn('id_risalah', $risalahDiarsipkan)
             ->where(function ($q) use ($userId, $uid) {
                 $q->where(function ($sub) use ($userId) {
-                    $sub->where('status', '!=', 'approve')
-                        ->where(function ($x) use ($userId) {
-                            $x->where('pembuat', $userId)
-                                ->orWhere('pemimpin_acara_user_id', $userId)
-                                ->orWhere('notulis_acara_user_id', $userId);
-                        });
-                })
-                ->orWhere(function ($sub) use ($userId, $uid) {
-                    $sub->where('status', 'approve')
-                        ->where(function ($x) use ($userId, $uid) {
-                            $x->where('pembuat', $userId)
-                                ->orWhere('pemimpin_acara_user_id', $userId)
-                                ->orWhere('notulis_acara_user_id', $userId)
-                                ->orWhereRaw(
-                                    "FIND_IN_SET(?, REPLACE(COALESCE(tujuan, ''), ';', ','))",
-                                    [$uid]
-                                );
-                        });
+                    $sub->where('status', '!=', 'approve')->where(function ($x) use ($userId) {
+                        $x->where('pembuat', $userId)->orWhere('pemimpin_acara_user_id', $userId)->orWhere('notulis_acara_user_id', $userId);
+                    });
+                })->orWhere(function ($sub) use ($userId, $uid) {
+                    $sub->where('status', 'approve')->where(function ($x) use ($userId, $uid) {
+                        $x->where('pembuat', $userId)
+                            ->orWhere('pemimpin_acara_user_id', $userId)
+                            ->orWhere('notulis_acara_user_id', $userId)
+                            ->orWhereRaw("FIND_IN_SET(?, REPLACE(COALESCE(tujuan, ''), ';', ','))", [$uid]);
+                    });
                 });
             });
 
@@ -80,10 +58,7 @@ class RisalahApiController extends Controller
         }
 
         if ($request->filled('tgl_dibuat_awal') && $request->filled('tgl_dibuat_akhir')) {
-            $query->whereBetween('tgl_dibuat', [
-                $request->tgl_dibuat_awal,
-                $request->tgl_dibuat_akhir,
-            ]);
+            $query->whereBetween('tgl_dibuat', [$request->tgl_dibuat_awal, $request->tgl_dibuat_akhir]);
         } elseif ($request->filled('tgl_dibuat_awal')) {
             $query->whereDate('tgl_dibuat', '>=', $request->tgl_dibuat_awal);
         } elseif ($request->filled('tgl_dibuat_akhir')) {
@@ -96,35 +71,25 @@ class RisalahApiController extends Controller
 
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
-                $q->where('judul', 'like', '%' . $request->search . '%')
-                    ->orWhere('nomor_risalah', 'like', '%' . $request->search . '%');
+                $q->where('judul', 'like', '%' . $request->search . '%')->orWhere('nomor_risalah', 'like', '%' . $request->search . '%');
             });
         }
 
         if ($request->filled('approval')) {
-            $query->where('status', 'pending')
-                ->where(function ($q) use ($userId) {
-                    $q->where('pemimpin_acara_user_id', $userId)
-                        ->orWhere('notulis_acara_user_id', $userId);
-                });
+            $query->where('status', 'pending')->where(function ($q) use ($userId) {
+                $q->where('pemimpin_acara_user_id', $userId)->orWhere('notulis_acara_user_id', $userId);
+            });
         }
 
         $perPage = $request->get('per_page');
 
         if ($perPage) {
-            $risalahs = $query
-                ->orderBy($sortBy, $sortDirection)
-                ->paginate($perPage);
+            $risalahs = $query->orderBy($sortBy, $sortDirection)->paginate($perPage);
         } else {
-            $risalahs = $query
-                ->orderBy($sortBy, $sortDirection)
-                ->get();
+            $risalahs = $query->orderBy($sortBy, $sortDirection)->get();
         }
 
-        return $this->apiResponse(
-            RisalahResource::collection($risalahs),
-            $risalahs->isEmpty() ? 'Belum ada risalah' : 'Daftar risalah ditemukan'
-        );
+        return $this->apiResponse(RisalahResource::collection($risalahs), $risalahs->isEmpty() ? 'Belum ada risalah' : 'Daftar risalah ditemukan');
 
         // return RisalahResource::collection($risalahs)->additional([
         //     'status' => 'success',
@@ -132,10 +97,7 @@ class RisalahApiController extends Controller
         // ]);
     }
 
-    public function risalahKeluar(){
-
-    }
-
+    public function risalahKeluar() {}
 
     public function kodeFilter()
     {
@@ -145,16 +107,21 @@ class RisalahApiController extends Controller
             ->distinct()
             ->orderBy('kode_bagian')
             ->get()
-            ->map(fn ($item) => [
-                'label' => $item->kode_bagian,
-                'value' => $item->kode_bagian,
-            ])
+            ->map(
+                fn($item) => [
+                    'label' => $item->kode_bagian,
+                    'value' => $item->kode_bagian,
+                ],
+            )
             ->values();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $kode,
-        ], 200);
+        return response()->json(
+            [
+                'status' => 'success',
+                'data' => $kode,
+            ],
+            200,
+        );
     }
 
     public function getAll()
@@ -169,7 +136,6 @@ class RisalahApiController extends Controller
 
     public function show($id)
     {
-
         $risalah = Risalah::with('user')->findOrFail($id);
         if ($risalah->nama_pemimpin_acara === Auth::user()->fullname) {
             $owner = true;
@@ -191,7 +157,6 @@ class RisalahApiController extends Controller
             'data' => new RisalahResource($risalah),
         ]);
     }
-
 
     // endpoint GET /api/risalahs/{id}/lampiran
     public function lampiran($id)
@@ -249,7 +214,6 @@ class RisalahApiController extends Controller
         $risalah = Risalah::findOrFail($id);
         $decoded = json_decode($risalah->lampiran, true);
 
-
         if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded[$index])) {
             abort(404, 'Lampiran tidak ditemukan');
         }
@@ -294,11 +258,7 @@ class RisalahApiController extends Controller
                 $risalah = Risalah::where('id_risalah', $id)->lockForUpdate()->firstOrFail();
 
                 // Ambil kirim_document yang sedang diproses oleh user ini (biasanya pemimpin acara)
-                $currentKirim = Kirim_Document::where('id_document', $risalah->id_risalah)
-                    ->where('jenis_document', 'risalah')
-                    ->where('id_penerima', $user->id)
-                    ->lockForUpdate()
-                    ->first();
+                $currentKirim = Kirim_Document::where('id_document', $risalah->id_risalah)->where('jenis_document', 'risalah')->where('id_penerima', $user->id)->lockForUpdate()->first();
 
                 // Helper: update status kirim untuk user yang action
                 if ($currentKirim) {
@@ -316,7 +276,6 @@ class RisalahApiController extends Controller
                 // APPROVE
                 // =========================
                 if ($request->status === 'approve') {
-
                     // Kalau sudah approve sebelumnya, jangan bikin kirim_document & notif dobel
                     // Tapi tetap pastikan status tersimpan konsisten.
                     if ($risalah->status === 'approve' && !empty($risalah->nomor_risalah)) {
@@ -345,22 +304,12 @@ class RisalahApiController extends Controller
                                 $tahun = now()->year;
                                 $kodeBagian = $risalah->kode_bagian;
 
-                                $lastSeriTahun = CounterNomorSurat::getLastSeriTahun(
-                                    $tahun,
-                                    'RIS',
-                                    $kodeBagian
-                                );
+                                $lastSeriTahun = CounterNomorSurat::getLastSeriTahun($tahun, 'RIS', $kodeBagian);
 
                                 $nextSeriTahun = $lastSeriTahun + 1;
                                 $seriTahunanPadded = str_pad($nextSeriTahun, 2, '0', STR_PAD_LEFT);
 
-                                $nomorRisalah = sprintf(
-                                    "RIS-%s/REKA/%s/%s/%d",
-                                    $seriTahunanPadded,
-                                    strtoupper($kodeBagian),
-                                    $bulanRomawi,
-                                    $tahun
-                                );
+                                $nomorRisalah = sprintf('RIS-%s/REKA/%s/%s/%d', $seriTahunanPadded, strtoupper($kodeBagian), $bulanRomawi, $tahun);
 
                                 $counterNomorSurat = CounterNomorSurat::create([
                                     'tanggal_permintaan' => now(),
@@ -408,18 +357,12 @@ class RisalahApiController extends Controller
                     $qrService = new QrCodeService();
 
                     // QR pemimpin acara (user yang approve)
-                    $qrTextPemimpin = "Pemimpin Acara: " . $user->firstname . ' ' . $user->lastname
-                        . "\nNomor Risalah: " . ($risalah->nomor_risalah ?? '-')
-                        . "\nTanggal Pengesahan: " . $risalah->tgl_disahkan->translatedFormat('l, d F Y H:i:s')
-                        . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
+                    $qrTextPemimpin = 'Pemimpin Acara: ' . $user->firstname . ' ' . $user->lastname . "\nNomor Risalah: " . ($risalah->nomor_risalah ?? '-') . "\nTanggal Pengesahan: " . $risalah->tgl_disahkan->translatedFormat('l, d F Y H:i:s') . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
 
                     $risalah->qr_pemimpin_acara = $qrService->generateWithLogo($qrTextPemimpin);
 
                     // QR notulis (update supaya nomor risalahnya masuk)
-                    $qrTextNotulis = "Notulis Acara: " . ($risalah->nama_notulis_acara ?? '-')
-                        . "\nNomor Risalah: " . ($risalah->nomor_risalah ?? '-')
-                        . "\nTanggal: " . now()->translatedFormat('l, d F Y H:i:s')
-                        . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
+                    $qrTextNotulis = 'Notulis Acara: ' . ($risalah->nama_notulis_acara ?? '-') . "\nNomor Risalah: " . ($risalah->nomor_risalah ?? '-') . "\nTanggal: " . now()->translatedFormat('l, d F Y H:i:s') . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
 
                     $risalah->qr_notulis_acara = $qrService->generateWithLogo($qrTextNotulis);
 
@@ -428,22 +371,27 @@ class RisalahApiController extends Controller
 
                     foreach ($tujuanArray as $tujuanId) {
                         $targetUser = User::find($tujuanId);
-                        if (!$targetUser) continue;
+                        if (!$targetUser) {
+                            continue;
+                        }
 
                         // Hindari duplikasi
-                        Kirim_Document::firstOrCreate([
-                            'id_document' => $risalah->id_risalah,
-                            'jenis_document' => 'risalah',
-                            'id_pengirim' => $currentKirim?->id_pengirim ?? $risalah->pembuat,
-                            'id_penerima' => $targetUser->id,
-                        ], [
-                            'status' => 'approve',
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                        Kirim_Document::firstOrCreate(
+                            [
+                                'id_document' => $risalah->id_risalah,
+                                'jenis_document' => 'risalah',
+                                'id_pengirim' => $currentKirim?->id_pengirim ?? $risalah->pembuat,
+                                'id_penerima' => $targetUser->id,
+                            ],
+                            [
+                                'status' => 'approve',
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ],
+                        );
 
                         Notifikasi::create([
-                            'id_document'    => $risalah->id_risalah,
+                            'id_document' => $risalah->id_risalah,
                             'jenis_document' => 'risalah',
                             'judul' => 'Risalah Masuk',
                             'judul_document' => $risalah->judul,
@@ -451,16 +399,12 @@ class RisalahApiController extends Controller
                             'updated_at' => now(),
                         ]);
 
-                        $push->sendToUser(
-                            $targetUser->id,
-                            'Risalah Masuk',
-                            $risalah->judul
-                        );
+                        // $push->sendToUser($targetUser->id, 'Risalah Masuk', $risalah->judul);
                     }
 
                     // Notifikasi ke pembuat
                     Notifikasi::create([
-                        'id_document'    => $risalah->id_risalah,
+                        'id_document' => $risalah->id_risalah,
                         'jenis_document' => 'risalah',
                         'judul' => 'Risalah Disetujui',
                         'judul_document' => $risalah->judul,
@@ -468,11 +412,7 @@ class RisalahApiController extends Controller
                         'updated_at' => now(),
                     ]);
 
-                    $push->sendToUser(
-                        $risalah->pembuat,
-                        'Risalah Disetujui',
-                        $risalah->judul
-                    );
+                    // $push->sendToUser($risalah->pembuat, 'Risalah Disetujui', $risalah->judul);
 
                     // Update status kirim untuk user approver (kalau record-nya ada)
                     Kirim_Document::where('id_document', $risalah->id_risalah)
@@ -489,7 +429,7 @@ class RisalahApiController extends Controller
                     $risalah->tgl_disahkan = now();
 
                     Notifikasi::create([
-                        'id_document'    => $risalah->id_risalah,
+                        'id_document' => $risalah->id_risalah,
                         'jenis_document' => 'risalah',
                         'judul' => 'Risalah Ditolak',
                         'judul_document' => $risalah->judul,
@@ -497,11 +437,7 @@ class RisalahApiController extends Controller
                         'updated_at' => now(),
                     ]);
 
-                    $push->sendToUser(
-                        $risalah->pembuat,
-                        'Risalah Ditolak',
-                        $risalah->judul
-                    );
+                    // $push->sendToUser($risalah->pembuat, 'Risalah Ditolak', $risalah->judul);
                 }
 
                 if ($request->status === 'correction') {
@@ -509,7 +445,7 @@ class RisalahApiController extends Controller
                     $risalah->tgl_disahkan = now();
 
                     Notifikasi::create([
-                        'id_document'    => $risalah->id_risalah,
+                        'id_document' => $risalah->id_risalah,
                         'jenis_document' => 'risalah',
                         'judul' => 'Risalah Perlu Revisi',
                         'judul_document' => $risalah->judul,
@@ -517,11 +453,7 @@ class RisalahApiController extends Controller
                         'updated_at' => now(),
                     ]);
 
-                    $push->sendToUser(
-                        $risalah->pembuat,
-                        'Risalah Perlu Revisi',
-                        $risalah->judul
-                    );
+                    // $push->sendToUser($risalah->pembuat, 'Risalah Perlu Revisi', $risalah->judul);
                 }
 
                 // Simpan final
@@ -534,14 +466,16 @@ class RisalahApiController extends Controller
             });
 
             return response()->json($result, 200);
-
         } catch (\Throwable $e) {
             Log::error('RisalahApiController@updateStatus error: ' . $e->getMessage());
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Terjadi kesalahan : ' . $e->getMessage()
-            ], 500);
+            return response()->json(
+                [
+                    'status' => 'error',
+                    'message' => 'Terjadi kesalahan : ' . $e->getMessage(),
+                ],
+                500,
+            );
         }
     }
 
@@ -555,5 +489,4 @@ class RisalahApiController extends Controller
             'data' => $data,
         ]);
     }
-
 }

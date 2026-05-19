@@ -799,7 +799,7 @@ class RisalahController extends Controller
                 'updated_at' => now(),
             ]);
 
-            $push->sendToUser($penerima->id, 'Risalah Menunggu Persetujuan', $risalah->judul);
+            // $push->sendToUser($penerima->id, 'Risalah Menunggu Persetujuan', $risalah->judul);
         }
 
         return redirect()
@@ -1414,7 +1414,7 @@ class RisalahController extends Controller
                             'updated_at' => now(),
                         ]);
 
-                        $push->sendToUser($user->id, 'Risalah Masuk', $risalah->judul);
+                        // $push->sendToUser($user->id, 'Risalah Masuk', $risalah->judul);
                     }
                 }
 
@@ -1427,7 +1427,7 @@ class RisalahController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $push->sendToUser($actorIds['pembuat_id'], 'Risalah Disetujui', $risalah->judul);
+                // $push->sendToUser($actorIds['pembuat_id'], 'Risalah Disetujui', $risalah->judul);
             } elseif ($request->status == 'reject') {
                 $risalah->tgl_disahkan = now();
 
@@ -1440,7 +1440,7 @@ class RisalahController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $push->sendToUser($actorIds['pembuat_id'], 'Risalah Ditolak', $risalah->judul);
+                // $push->sendToUser($actorIds['pembuat_id'], 'Risalah Ditolak', $risalah->judul);
             } elseif ($request->status == 'correction') {
                 $risalah->tgl_disahkan = now();
 
@@ -1453,7 +1453,7 @@ class RisalahController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $push->sendToUser($actorIds['pembuat_id'], 'Risalah Perlu Revisi', $risalah->judul);
+                // $push->sendToUser($actorIds['pembuat_id'], 'Risalah Perlu Revisi', $risalah->judul);
             } else {
                 $risalah->tgl_disahkan = null;
             }

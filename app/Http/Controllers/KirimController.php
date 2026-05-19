@@ -1454,7 +1454,7 @@ class KirimController extends Controller
                 'id_user' => $penerima->id,
                 'updated_at' => now(),
             ]);
-            $push->sendToUser($penerima->id, 'Risalah Menunggu Persetujuan', $risalah->judul);
+            // $push->sendToUser($penerima->id, 'Risalah Menunggu Persetujuan', $risalah->judul);
         }
         $risalah->save();
 
