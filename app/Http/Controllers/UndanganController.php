@@ -1714,7 +1714,7 @@ class UndanganController extends Controller
         if (Auth::user()->role_id_role == 2) {
 
             return redirect()
-                ->route(Auth::user()->role->nm_role . '.undangan.terkirim')
+                ->route('undangan.terkirim')
                 ->with('success', 'Undangan berhasil diubah dan dikirim ulang untuk persetujuan.');
         }
 
@@ -1740,7 +1740,7 @@ class UndanganController extends Controller
                 ]);
             }
 
-            return redirect()->route('undangan.' . Auth::user()->role->nm_role)->with('success', 'Undangan deleted successfully.');
+            return redirect()->route('undangan.terkirim')->with('success', 'Undangan deleted successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson()) {
                 return response()->json([
