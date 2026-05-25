@@ -34,9 +34,9 @@ class NotifService
         );
 
         // Push notification
-        $push = app(NotifApiController::class);
+        // $push = app(NotifApiController::class);
 
-        $push->sendToUser($userId, $judul, $judulDocument ?? 'Ada pembaruan dokumen');
+        // $push->sendToUser($userId, $judul, $judulDocument ?? 'Ada pembaruan dokumen');
 
         return $notif;
     }
