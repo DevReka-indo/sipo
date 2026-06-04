@@ -534,11 +534,11 @@
                                     <div class="info-label">Status</div>
                                     <div class="info-value">
                                         @if ($memo->kode != $divDeptKode)
-                                            @if ($memo->final_status == 'reject')
+                                            @if ($memo->status == 'reject')
                                                 <span class="badge bg-danger">Ditolak</span>
-                                            @elseif ($memo->final_status == 'pending')
+                                            @elseif ($memo->status == 'pending')
                                                 <span class="badge bg-info">Diproses</span>
-                                            @elseif ($memo->final_status == 'correction')
+                                            @elseif ($memo->status == 'correction')
                                                 <span class="badge bg-warning">Dikoreksi</span>
                                             @else
                                                 <span class="badge bg-success">Diterima</span>
