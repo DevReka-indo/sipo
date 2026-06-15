@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\NotifApiController;
 use App\Http\Controllers\Api\ProfileApiController;
 use App\Http\Controllers\Api\DisposisiApiController;
 use Illuminate\Support\Facades\Http;
+use App\Http\Controllers\Api\ApprovalApiController;
+use App\Http\Controllers\Api\UserManageApiController;
 
 // eksternal API
 use App\Http\Controllers\CetakPDFController;
@@ -128,10 +130,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [DashboardApiController::class, 'index']);
 
     // ===== Endpoint User =====
-    Route::get('/users', [App\Http\Controllers\Api\UserManageApiController::class, 'index']);
+    Route::get('/users', [UserManageApiController::class, 'index']);
 
     // ===== Endpoint Profile =====
     Route::get('/profile', [ProfileApiController::class, 'profileDetails']);
 
-    Route::get('/approval', [App\Http\Controllers\Api\ApprovalApiController::class, 'index']);
+    Route::get('/approval', [ApprovalApiController::class, 'index']);
+
+    // ===== Endpoint Bagian Kerja =====
+    Route::get('/bagian-kerja', [UserManageApiController::class, 'bagianKerja']);
+    Route::delete('/bagian-kerja/{id}', [UserManageApiController::class, 'destroyBagianKerja']);
+
+    // ===== Endpoint Struktur Organisasi =====
+    Route::get('/struktur-organisasi', [UserManageApiController::class, 'strukturOrganisasi']);
 });
