@@ -121,7 +121,8 @@
                                         <td class="nomor">{{ ($memoDiterima->firstItem() ?? 0) + $index }}</td>
 
                                         <td class="nama-dokumen {{ $statusClass }}" style="{{ $statusStyle }}">
-                                            {{ Str::limit($memo->judul, 35, '...') }}
+                                            {{-- {{ Str::limit($memo->judul, 35, '...') }} --}}
+                                            {{ Str::limit($memo->judul) }}
                                         </td>
 
                                         <td>

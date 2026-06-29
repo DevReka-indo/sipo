@@ -124,7 +124,8 @@
                                         <td class="nama-dokumen
                             {{ $undangan->status == 'reject' ? 'text-danger' : ($undangan->status == 'correction' ? 'text-warning' : ($undangan->status == 'approve' ? 'text-success' : '')) }}"
                                             style="{{ $undangan->status == 'pending' ? 'color: #0dcaf0;' : '' }}">
-                                            {{ Str::limit($undangan->judul ?? '-', 35, '...') }}
+                                            {{-- {{ Str::limit($undangan->judul ?? '-', 35, '...') }} --}}
+                                            {{ Str::limit($undangan->judul ?? '-') }}
                                         </td>
                                         <td>{{ isset($undangan->tgl_rapat) ? \Carbon\Carbon::parse($undangan->tgl_rapat)->format('d-m-Y') : '-' }}
                                         </td>

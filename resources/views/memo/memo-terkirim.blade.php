@@ -115,7 +115,8 @@
                                         @endphp
 
                                         <td class="nama-dokumen {{ $class }}" style="{{ $style }}">
-                                            {{ Str::limit($memo->judul, 35, '...') }}
+                                            {{-- {{ Str::limit($memo->judul, 35, '...') }} --}}
+                                            {{ Str::limit($memo->judul) }}
                                         </td>
                                         {{-- @if (Auth::user()->divisi_id_divisi == $memo->divisi_id_divisi)
                                             <td class="nama-dokumen
