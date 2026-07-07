@@ -23,6 +23,7 @@ class RisalahResource extends JsonResource
             'status' => $this->status,
             'nomor_risalah' => $this->nomor_risalah,
             'risalah_details' => $this->risalahDetails,
+            'tgl_dibuat' => $this->tgl_dibuat,
 
             // 'pembuat' => $this->pembuat,
 

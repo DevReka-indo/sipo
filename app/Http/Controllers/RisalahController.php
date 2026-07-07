@@ -90,12 +90,7 @@ class RisalahController extends Controller
 
     private function getFinalRecipientIds(Risalah $risalah): array
     {
-        return collect(explode(';', (string) $risalah->tujuan))
-            ->map(fn($id) => (int) trim($id))
-            ->filter(fn($id) => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
+        return collect(explode(';', (string) $risalah->tujuan))->map(fn($id) => (int) trim($id))->filter(fn($id) => $id > 0)->unique()->values()->all();
     }
 
     private function resolveUserByPrimaryOrName(?int $userId, ?string $fullname): ?User
@@ -116,20 +111,12 @@ class RisalahController extends Controller
         $seri = SeriRisalah::all();
         $userId = (int) Auth::id();
 
-        $kode = DB::table('risalah')
-            ->whereNotNull('kode')
-            ->distinct()
-            ->pluck('kode');
+        $kode = DB::table('risalah')->whereNotNull('kode')->distinct()->pluck('kode');
 
-        $risalahDiarsipkan = Arsip::where('user_id', $userId)
-            ->where('jenis_document', 'App\Models\Risalah')
-            ->pluck('document_id')
-            ->toArray();
+        $risalahDiarsipkan = Arsip::where('user_id', $userId)->where('jenis_document', 'App\Models\Risalah')->pluck('document_id')->toArray();
 
         $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_risalah', 'judul'];
-        $sortBy = in_array($request->get('sort_by'), $allowedSortColumns)
-            ? $request->get('sort_by')
-            : 'created_at';
+        $sortBy = in_array($request->get('sort_by'), $allowedSortColumns) ? $request->get('sort_by') : 'created_at';
 
         $sortDirection = $request->get('sort_direction', 'desc') === 'desc' ? 'desc' : 'asc';
 
@@ -139,24 +126,16 @@ class RisalahController extends Controller
             ->whereNotIn('id_risalah', $risalahDiarsipkan)
             ->where(function ($q) use ($userId, $uid) {
                 $q->where(function ($sub) use ($userId) {
-                    $sub->where('status', '!=', 'approve')
-                        ->where(function ($x) use ($userId) {
-                            $x->where('pembuat', $userId)
-                                ->orWhere('pemimpin_acara_user_id', $userId)
-                                ->orWhere('notulis_acara_user_id', $userId);
-                        });
-                })
-                ->orWhere(function ($sub) use ($userId, $uid) {
-                    $sub->where('status', 'approve')
-                        ->where(function ($x) use ($userId, $uid) {
-                            $x->where('pembuat', $userId)
-                                ->orWhere('pemimpin_acara_user_id', $userId)
-                                ->orWhere('notulis_acara_user_id', $userId)
-                                ->orWhereRaw(
-                                    "FIND_IN_SET(?, REPLACE(COALESCE(tujuan, ''), ';', ','))",
-                                    [$uid]
-                                );
-                        });
+                    $sub->where('status', '!=', 'approve')->where(function ($x) use ($userId) {
+                        $x->where('pembuat', $userId)->orWhere('pemimpin_acara_user_id', $userId)->orWhere('notulis_acara_user_id', $userId);
+                    });
+                })->orWhere(function ($sub) use ($userId, $uid) {
+                    $sub->where('status', 'approve')->where(function ($x) use ($userId, $uid) {
+                        $x->where('pembuat', $userId)
+                            ->orWhere('pemimpin_acara_user_id', $userId)
+                            ->orWhere('notulis_acara_user_id', $userId)
+                            ->orWhereRaw("FIND_IN_SET(?, REPLACE(COALESCE(tujuan, ''), ';', ','))", [$uid]);
+                    });
                 });
             });
 
@@ -178,28 +157,20 @@ class RisalahController extends Controller
 
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
-                $q->where('judul', 'like', '%' . $request->search . '%')
-                    ->orWhere('nomor_risalah', 'like', '%' . $request->search . '%');
+                $q->where('judul', 'like', '%' . $request->search . '%')->orWhere('nomor_risalah', 'like', '%' . $request->search . '%');
             });
         }
 
         $perPage = $request->get('per_page', 10);
 
-        $risalahs = $query
-            ->orderBy($sortBy, $sortDirection)
-            ->paginate($perPage);
+        $risalahs = $query->orderBy($sortBy, $sortDirection)->paginate($perPage);
 
         $risalahs->getCollection()->transform(function ($risalah) {
             $risalah->final_status = $risalah->status;
             return $risalah;
         });
 
-        return view('risalah.index', compact(
-            'risalahs',
-            'seri',
-            'sortDirection',
-            'kode'
-        ));
+        return view('risalah.index', compact('risalahs', 'seri', 'sortDirection', 'kode'));
     }
 
     public function superadmin(Request $request)
@@ -802,9 +773,7 @@ class RisalahController extends Controller
             // $push->sendToUser($penerima->id, 'Risalah Menunggu Persetujuan', $risalah->judul);
         }
 
-        return redirect()
-            ->route('risalah.index')
-            ->with('success', 'Risalah berhasil ditambahkan dan menunggu persetujuan');
+        return redirect()->route('risalah.index')->with('success', 'Risalah berhasil ditambahkan dan menunggu persetujuan');
     }
 
     public function updateDocumentStatus(Risalah $risalah)
@@ -1140,7 +1109,10 @@ class RisalahController extends Controller
             // =============================
             $notifService = app(NotifService::class);
             $actorIds = $this->getRisalahActorIds($risalah);
-            $approverIds = collect([$actorIds['pemimpin_id']])->filter(fn($v) => $v > 0)->unique()->values();
+            $approverIds = collect([$actorIds['pemimpin_id']])
+                ->filter(fn($v) => $v > 0)
+                ->unique()
+                ->values();
 
             foreach ($approverIds as $approverId) {
                 $notifService->createAndPush($approverId, 'Risalah Diedit, Menunggu Persetujuan', $risalah->judul, (int) $risalah->id_risalah, 'risalah');
@@ -1154,9 +1126,7 @@ class RisalahController extends Controller
             // =============================
             // REDIRECT
             // =============================
-            return redirect()
-                ->route('risalah.index')
-                ->with('success', 'Risalah berhasil diperbarui dan dikirim ulang untuk persetujuan.');
+            return redirect()->route('risalah.index')->with('success', 'Risalah berhasil diperbarui dan dikirim ulang untuk persetujuan.');
         } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('Risalah update error: ' . $e->getMessage());
@@ -1278,6 +1248,8 @@ class RisalahController extends Controller
             $risalah = Risalah::findOrFail($id);
             $userId = Auth::id();
 
+            $originalTglDibuat = $risalah->tgl_dibuat;
+
             $rules = [
                 'status' => 'required|in:pending,approve,reject,correction',
             ];
@@ -1371,7 +1343,9 @@ class RisalahController extends Controller
                 }
 
                 // Set tanggal disahkan
-                $risalah->tgl_disahkan = now();
+                if (empty($risalah->tgl_disahkan)) {
+                    $risalah->tgl_disahkan = now();
+                }
 
                 // Generate QR Code Pemimpin Acara dengan nomor risalah yang sudah ada
                 $qrText = 'Pemimpin Acara: ' . Auth::user()->firstname . ' ' . Auth::user()->lastname . "\nNomor Risalah: " . $risalah->nomor_risalah . "\nTanggal Pengesahan: " . $risalah->tgl_disahkan->translatedFormat('l, d F Y H:i:s') . "\nDikeluarkan oleh website SIPO PT Rekaindo Global Jasa";
@@ -1386,7 +1360,7 @@ class RisalahController extends Controller
 
                 // Kirim ke semua tujuan
                 $tujuanArray = $this->getFinalRecipientIds($risalah);
-                $senderId = $actorIds['notulis_id'] ?: $actorIds['pembuat_id'] ?: ($currentKirim->id_pengirim ?? Auth::id());
+                $senderId = $actorIds['notulis_id'] ?: $actorIds['pembuat_id'] ?: $currentKirim->id_pengirim ?? Auth::id();
 
                 foreach ($tujuanArray as $idTujuan) {
                     $users = User::where('id', $idTujuan)->get();
@@ -1429,7 +1403,7 @@ class RisalahController extends Controller
 
                 // $push->sendToUser($actorIds['pembuat_id'], 'Risalah Disetujui', $risalah->judul);
             } elseif ($request->status == 'reject') {
-                $risalah->tgl_disahkan = now();
+                $risalah->tgl_disahkan = null;
 
                 Notifikasi::create([
                     'judul' => 'Risalah Ditolak',
@@ -1442,7 +1416,7 @@ class RisalahController extends Controller
 
                 // $push->sendToUser($actorIds['pembuat_id'], 'Risalah Ditolak', $risalah->judul);
             } elseif ($request->status == 'correction') {
-                $risalah->tgl_disahkan = now();
+                $risalah->tgl_disahkan = null;
 
                 Notifikasi::create([
                     'judul' => 'Risalah Perlu Revisi',
@@ -1460,6 +1434,9 @@ class RisalahController extends Controller
 
             // Simpan catatan jika ada
             $risalah->catatan = $request->catatan;
+
+            // Pastikan tgl_dibuat tidak berubah saat update status
+            $risalah->tgl_dibuat = $originalTglDibuat;
 
             // Simpan perubahan
             $risalah->save();
