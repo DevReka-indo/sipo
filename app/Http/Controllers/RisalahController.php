@@ -1198,16 +1198,31 @@ class RisalahController extends Controller
         $risalah = $risalahCollection->first();
 
         // Cek apakah undangan dan tujuannya tidak null
-        if ($undangan && $undangan->tujuan) {
-            $userIds = explode(';', $undangan->tujuan);
+        $tujuanRaw = null;
+
+        if ($undangan && !empty($undangan->tujuan)) {
+            $tujuanRaw = $undangan->tujuan;
+        } elseif (!empty($risalah->tujuan)) {
+            $tujuanRaw = $risalah->tujuan;
+        }
+
+        if (!empty($tujuanRaw)) {
+            $userIds = collect(explode(';', $tujuanRaw))
+                ->map(fn ($id) => trim($id))
+                ->filter()
+                ->unique()
+                ->values();
+
             $pdfController = new \App\Http\Controllers\CetakPDFController();
+
             $listNama = \App\Models\User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
                 ->whereIn('id', $userIds)
                 ->get()
-                ->map(function ($user, $key) use ($pdfController) {
+                ->map(function ($user) use ($pdfController) {
                     $level = $pdfController->detectLevel($user);
                     $user->level_kerja = $level;
                     $user->bagian_text = $pdfController->getBagianText($user, $level);
+
                     return $user;
                 })
                 ->sortBy(function ($user) {
@@ -1217,7 +1232,11 @@ class RisalahController extends Controller
 
             $tujuanUsernames = $listNama
                 ->map(function ($user, $index) {
-                    return $index + 1 . '. ' . $user->position->nm_position . ' ' . $user->bagian_text . ' ' . '(' . $user->firstname . ' ' . $user->lastname . ')';
+                    $position = optional($user->position)->nm_position ?? '-';
+                    $bagian = $user->bagian_text ?? '-';
+                    $nama = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+
+                    return ($index + 1) . '. ' . $position . ' ' . $bagian . ' (' . $nama . ')';
                 })
                 ->implode("\n");
         } else {

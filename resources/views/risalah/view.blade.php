@@ -227,7 +227,7 @@
                     </div>
                 @endif
                 {{-- Row 3: Daftar Tujuan --}}
-                @if ($tujuanUsernames)
+                {{-- @if ($tujuanUsernames)
                     <div class="row">
                         <div class="col-md-12 mb-3">
                             <div class="card border-0 shadow-sm rounded-3">
@@ -248,6 +248,32 @@
                         </div>
                     </div>
                 @else
+                @endif --}}
+                {{-- Row 3: Daftar Tujuan --}}
+                @php
+                    $daftarTujuan = $tujuanUsernames ?: $risalah->tujuan ?? null;
+                @endphp
+
+                @if (!empty($daftarTujuan))
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3">
+                                <div class="card-header py-2 rounded-top-3"
+                                    style="background:#e3f2fd;border-bottom:1px solid #bbdefb;">
+                                    <i class="fas fa-id-card me-2 text-primary"></i>
+                                    <span class="fw-semibold">Daftar Tujuan</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="info-row d-flex flex-column flex-sm-row">
+                                        <div class="info-label">Kepada</div>
+                                        <div class="info-value">
+                                            <pre style="font-family: Public Sans, sans-serif">{{ $daftarTujuan }}</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 @endif
 
                 {{-- Form Approval (tampil jika pending/reject/correction) --}}

@@ -97,19 +97,77 @@ class Risalah extends Model
     //     });
     // }
 
+    // public function tujuanString()
+    // {
+    //     $pdfController = new CetakPDFController();
+    //     try {
+    //         $tujuan = Undangan::where('judul', $this->judul)->get()->first()->tujuan;
+    //         $idArray = explode(';', $tujuan);
+    //         $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //             ->whereIn('id', $idArray)
+    //             ->get()
+    //             ->map(function ($user, $key) use ($pdfController) {
+    //                 $level = $pdfController->detectLevel($user);
+    //                 $user->level_kerja = $level;
+    //                 $user->bagian_text = $pdfController->getBagianText($user, $level);
+    //                 return $user;
+    //             })
+    //             ->sortBy(function ($user) {
+    //                 return optional($user->position)->id_position;
+    //             })
+    //             ->values();
+
+    //         $tujuanNames = $listNama->map(function ($user, $index) {
+    //             return $user->position->nm_position . ' '
+    //                 . $user->bagian_text . ' '
+    //                 . '(' . $user->firstname . ' ' . $user->lastname . ')';
+    //         });
+
+    //         return $tujuanNames;
+    //     } catch (\Exception $e) {
+    //         return null; // or handle the exception as needed
+    //     }
+    // }
+
     public function tujuanString()
     {
         $pdfController = new CetakPDFController();
+
         try {
-            $tujuan = Undangan::where('judul', $this->judul)->get()->first()->tujuan;
-            $idArray = explode(';', $tujuan);
+            $tujuan = null;
+
+            if ($this->with_undangan) {
+                $undangan = Undangan::where('judul', $this->judul)->first();
+                $tujuan = $undangan?->tujuan;
+            }
+
+            if (empty($tujuan)) {
+                $tujuan = $this->tujuan;
+            }
+
+            if (empty($tujuan)) {
+                return collect();
+            }
+
+            $idArray = collect(explode(';', $tujuan))
+                ->map(fn ($id) => trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($idArray)) {
+                return collect();
+            }
+
             $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
                 ->whereIn('id', $idArray)
                 ->get()
-                ->map(function ($user, $key) use ($pdfController) {
+                ->map(function ($user) use ($pdfController) {
                     $level = $pdfController->detectLevel($user);
                     $user->level_kerja = $level;
                     $user->bagian_text = $pdfController->getBagianText($user, $level);
+
                     return $user;
                 })
                 ->sortBy(function ($user) {
@@ -117,15 +175,15 @@ class Risalah extends Model
                 })
                 ->values();
 
-            $tujuanNames = $listNama->map(function ($user, $index) {
-                return $user->position->nm_position . ' '
-                    . $user->bagian_text . ' '
-                    . '(' . $user->firstname . ' ' . $user->lastname . ')';
-            });
+            return $listNama->map(function ($user, $index) {
+                $position = optional($user->position)->nm_position ?? '-';
+                $bagian = $user->bagian_text ?? '-';
+                $nama = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
 
-            return $tujuanNames;
+                return ($index + 1) . '. ' . $position . ' ' . $bagian . ' (' . $nama . ')';
+            });
         } catch (\Exception $e) {
-            return null; // or handle the exception as needed
+            return collect();
         }
     }
 
