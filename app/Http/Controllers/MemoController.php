@@ -30,6 +30,7 @@ use App\Services\QrCodeService;
 use ZipArchive;
 use Illuminate\Support\Facades\Log;
 use App\Services\NotifService;
+use App\Support\PositionOrder;
 
 class MemoController extends Controller
 {
@@ -1804,6 +1805,260 @@ class MemoController extends Controller
             'bccDisplayList',
             'sumberDiterima'
         ));
+    }
+
+    // private function parseRecipientUserIds(?string $value): array
+    // {
+    //     if (empty($value)) {
+    //         return [];
+    //     }
+
+    //     return collect(explode(';', (string) $value))
+    //         ->map(fn ($id) => trim($id))
+    //         ->filter(fn ($id) => $id !== '' && is_numeric($id))
+    //         ->map(fn ($id) => (int) $id)
+    //         ->unique()
+    //         ->values()
+    //         ->all();
+    // }
+
+    // private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
+    // {
+    //     $fromRaw = collect(explode(';', (string) $rawValue))
+    //         ->map(fn ($item) => trim($item))
+    //         ->filter(fn ($item) => $item !== '' && !is_numeric($item))
+    //         ->values();
+
+    //     $fromLegacy = collect(explode(';', (string) $legacyValue))
+    //         ->map(fn ($item) => trim($item))
+    //         ->filter(fn ($item) => $item !== '')
+    //         ->values();
+
+    //     return $fromRaw
+    //         ->merge($fromLegacy)
+    //         ->unique()
+    //         ->values()
+    //         ->all();
+    // }
+
+    // private function buildGroupedRecipientDisplayList(array $userIds, array $legacyNames = []): array
+    // {
+    //     if (empty($userIds)) {
+    //         return array_values(array_filter($legacyNames));
+    //     }
+
+    //     $selectedUsers = User::with([
+    //         'position:id_position,nm_position',
+    //         'department:id_department,name_department',
+    //     ])
+    //         ->whereIn('id', $userIds)
+    //         ->get([
+    //             'id',
+    //             'firstname',
+    //             'lastname',
+    //             'position_id_position',
+    //             'director_id_director',
+    //             'divisi_id_divisi',
+    //             'department_id_department',
+    //             'section_id_section',
+    //             'unit_id_unit',
+    //         ]);
+
+    //     if ($selectedUsers->isEmpty()) {
+    //         return array_values(array_filter($legacyNames));
+    //     }
+
+    //     $displayList = [];
+    //     $selectedIdSet = $selectedUsers->pluck('id')->flip();
+    //     $remainingIds = $selectedUsers->pluck('id')->all();
+
+    //     $directorMap = Director::pluck('name_director', 'id_director');
+    //     $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
+    //     $departmentMap = Department::pluck('name_department', 'id_department');
+    //     $sectionMap = Section::pluck('name_section', 'id_section');
+    //     $unitMap = Unit::pluck('name_unit', 'id_unit');
+
+    //     $sectionToDepartmentMap = Section::pluck('department_id_department', 'id_section');
+    //     $unitToSectionMap = Unit::pluck('section_id_section', 'id_unit');
+
+    //     $groupedDepartmentIds = [];
+    //     $groupedSectionIds = [];
+
+    //     $scopes = [
+    //         [
+    //             'col' => 'director_id_director',
+    //             'label' => 'Direktur',
+    //             'map' => $directorMap,
+    //         ],
+    //         [
+    //             'col' => 'divisi_id_divisi',
+    //             'label' => 'Divisi',
+    //             'map' => $divisionMap,
+    //         ],
+    //         [
+    //             'col' => 'department_id_department',
+    //             'label' => 'Departemen',
+    //             'map' => $departmentMap,
+    //         ],
+    //         [
+    //             'col' => 'section_id_section',
+    //             'label' => 'Bagian',
+    //             'map' => $sectionMap,
+    //         ],
+    //         [
+    //             'col' => 'unit_id_unit',
+    //             'label' => 'Unit',
+    //             'map' => $unitMap,
+    //         ],
+    //     ];
+
+    //     foreach ($scopes as $scope) {
+    //         $groupIds = $selectedUsers
+    //             ->whereIn('id', $remainingIds)
+    //             ->pluck($scope['col'])
+    //             ->filter()
+    //             ->unique()
+    //             ->values();
+
+    //         foreach ($groupIds as $groupId) {
+    //             if ($scope['col'] === 'section_id_section') {
+    //                 $parentDeptId = $sectionToDepartmentMap[$groupId] ?? null;
+
+    //                 if (
+    //                     !empty($parentDeptId) &&
+    //                     in_array((int) $parentDeptId, $groupedDepartmentIds, true)
+    //                 ) {
+    //                     $coveredUserIds = $selectedUsers
+    //                         ->where('section_id_section', $groupId)
+    //                         ->pluck('id')
+    //                         ->all();
+
+    //                     $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+    //                     continue;
+    //                 }
+    //             }
+
+    //             if ($scope['col'] === 'unit_id_unit') {
+    //                 $parentSectionId = $unitToSectionMap[$groupId] ?? null;
+    //                 $parentDeptId = $parentSectionId
+    //                     ? ($sectionToDepartmentMap[$parentSectionId] ?? null)
+    //                     : null;
+
+    //                 if (
+    //                     (!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) ||
+    //                     (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true))
+    //                 ) {
+    //                     $coveredUserIds = $selectedUsers
+    //                         ->where('unit_id_unit', $groupId)
+    //                         ->pluck('id')
+    //                         ->all();
+
+    //                     $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+    //                     continue;
+    //                 }
+    //             }
+
+    //             $allMemberIds = User::where($scope['col'], $groupId)->pluck('id');
+
+    //             if ($allMemberIds->isEmpty()) {
+    //                 continue;
+    //             }
+
+    //             $allSelected = $allMemberIds->every(
+    //                 fn ($memberId) => $selectedIdSet->has($memberId)
+    //             );
+
+    //             if ($allSelected) {
+    //                 $scopeName = $scope['map'][$groupId] ?? 'ID ' . $groupId;
+    //                 $displayList[] = $scope['label'] . ': ' . $scopeName;
+
+    //                 if ($scope['col'] === 'department_id_department') {
+    //                     $groupedDepartmentIds[] = (int) $groupId;
+    //                 }
+
+    //                 if ($scope['col'] === 'section_id_section') {
+    //                     $groupedSectionIds[] = (int) $groupId;
+    //                 }
+
+    //                 $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
+    //             }
+    //         }
+    //     }
+
+    //     $remainingUsers = PositionOrder::sortUsers(
+    //         $selectedUsers->whereIn('id', $remainingIds)
+    //     );
+
+    //     foreach ($remainingUsers as $user) {
+    //         $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+    //         $positionName = $user->position->nm_position ?? '-';
+    //         $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
+    //         $bagianKerja = $this->getRecipientWorkUnitLabel($user, [
+    //             'director' => $directorMap,
+    //             'division' => $divisionMap,
+    //             'department' => $departmentMap,
+    //             'section' => $sectionMap,
+    //             'unit' => $unitMap,
+    //         ]);
+
+    //         $displayList[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
+    //     }
+
+    //     return array_values(array_filter(array_merge($displayList, $legacyNames)));
+    // }
+
+    private function getRecipientWorkUnitLabel(User $user, array $maps): string
+    {
+        $positionName = $user->position->nm_position ?? '-';
+        $positionLower = strtolower($positionName);
+
+        $isStaff = str_contains($positionLower, 'staff') || str_contains($positionLower, 'staf');
+
+        if ($isStaff) {
+            if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+                return $maps['unit'][$user->unit_id_unit];
+            }
+
+            if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+                return $maps['section'][$user->section_id_section];
+            }
+
+            if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+                return $maps['department'][$user->department_id_department];
+            }
+
+            if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+                return $maps['division'][$user->divisi_id_divisi];
+            }
+
+            if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+                return $maps['director'][$user->director_id_director];
+            }
+
+            return '-';
+        }
+
+        if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+            return $maps['department'][$user->department_id_department];
+        }
+
+        if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+            return $maps['division'][$user->divisi_id_divisi];
+        }
+
+        if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+            return $maps['section'][$user->section_id_section];
+        }
+
+        if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+            return $maps['unit'][$user->unit_id_unit];
+        }
+
+        if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+            return $maps['director'][$user->director_id_director];
+        }
+
+        return '-';
     }
     // public function showDiterima($id)
     // {

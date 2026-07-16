@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\NotifApiController;
 use App\Services\QrCodeService;
 use Illuminate\Support\Str;
 use App\Services\NotifService;
+use App\Support\PositionOrder;
 
 class RisalahController extends Controller
 {
@@ -1177,27 +1178,32 @@ class RisalahController extends Controller
     public function view($id)
     {
         $userId = Auth::id();
-        $risalah = Risalah::with('risalahDetails.subDetails')->where('id_risalah', $id)->firstOrFail();
 
-        // Ambil data undangan yang judulnya sama
+        $risalah = Risalah::with('risalahDetails.subDetails')
+            ->where('id_risalah', $id)
+            ->firstOrFail();
+
         $undangan = Undangan::where('judul', $risalah->judul)->first();
 
-        // Bungkus risalah dalam collection agar bisa diproses transform
         $risalahCollection = collect([$risalah]);
 
         $risalahCollection->transform(function ($risalah) use ($userId) {
             if ($risalah->divisi_id_divisi === Auth::user()->divisi_id_divisi) {
                 $risalah->final_status = $risalah->status;
             } else {
-                $statusKirim = Kirim_Document::where('id_document', $risalah->id_risalah)->where('jenis_document', 'risalah')->where('id_penerima', $userId)->first();
+                $statusKirim = Kirim_Document::where('id_document', $risalah->id_risalah)
+                    ->where('jenis_document', 'risalah')
+                    ->where('id_penerima', $userId)
+                    ->first();
+
                 $risalah->final_status = $statusKirim ? $statusKirim->status : '-';
             }
+
             return $risalah;
         });
 
         $risalah = $risalahCollection->first();
 
-        // Cek apakah undangan dan tujuannya tidak null
         $tujuanRaw = null;
 
         if ($undangan && !empty($undangan->tujuan)) {
@@ -1213,9 +1219,9 @@ class RisalahController extends Controller
                 ->unique()
                 ->values();
 
-            $pdfController = new \App\Http\Controllers\CetakPDFController();
+            $pdfController = new CetakPDFController();
 
-            $listNama = \App\Models\User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+            $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
                 ->whereIn('id', $userIds)
                 ->get()
                 ->map(function ($user) use ($pdfController) {
@@ -1224,11 +1230,9 @@ class RisalahController extends Controller
                     $user->bagian_text = $pdfController->getBagianText($user, $level);
 
                     return $user;
-                })
-                ->sortBy(function ($user) {
-                    return optional($user->position)->id_position;
-                })
-                ->values();
+                });
+
+            $listNama = PositionOrder::sortUsers($listNama);
 
             $tujuanUsernames = $listNama
                 ->map(function ($user, $index) {
@@ -1244,15 +1248,12 @@ class RisalahController extends Controller
         }
 
         $lampiranData = [];
+
         if ($risalah->lampiran) {
-            // Coba decode sebagai JSON dulu (untuk data baru)
             $jsonData = json_decode($risalah->lampiran, true);
+
             if ($jsonData !== null && is_array($jsonData)) {
                 $lampiranData = $jsonData;
-            } else {
-                // Jika bukan JSON, ini kemungkinan data BLOB lama - skip untuk sekarang
-                // atau bisa dikasih placeholder jika memang ada file
-                $lampiranData = [];
             }
         }
 
