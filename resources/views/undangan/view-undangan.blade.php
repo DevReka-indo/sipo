@@ -108,9 +108,9 @@
                                         @endif
 
                                         <a href="{{ route('disposisi.create', [
-                                                'document_type' => 'undangan',
-                                                'document_id' => $undangan->id_undangan,
-                                            ]) }}"
+                                            'document_type' => 'undangan',
+                                            'document_id' => $undangan->id_undangan,
+                                        ]) }}"
                                             class="btn btn-sm btn-primary rounded-2">
                                             <i class="fas fa-paper-plane me-1"></i> Disposisi
                                         </a>
@@ -176,7 +176,11 @@
                                 <div class="info-row d-flex flex-column flex-sm-row">
                                     <div class="info-label">Kepada</div>
                                     <div class="info-value">
-                                        <pre style="font-family: Public Sans, sans-serif">{{ $undangan->tujuan }}</pre>
+                                        @forelse (($tujuanDisplayList ?? []) as $index => $item)
+                                            <p class="m-0">{{ $index + 1 }}. {{ $item }}</p>
+                                        @empty
+                                            -
+                                        @endforelse
                                     </div>
                                 </div>
 
@@ -226,7 +230,8 @@
 
                 {{-- Form Approval (khusus manager approver) --}}
                 @php
-                    $isManagerApprover = auth()->user()->role_id_role == 3 &&
+                    $isManagerApprover =
+                        auth()->user()->role_id_role == 3 &&
                         ($undangan->manager_user_id
                             ? (int) $undangan->manager_user_id === (int) auth()->id()
                             : (string) $undangan->nama_bertandatangan === (string) auth()->user()->fullname);
@@ -302,7 +307,11 @@
                                         <div class="info-row d-flex flex-column flex-sm-row">
                                             <div class="info-label">Kepada</div>
                                             <div class="info-value">
-                                                <pre style="font-family: Public Sans, sans-serif">{{ $undangan->tujuan }}</pre>
+                                                @forelse (($tujuanDisplayList ?? []) as $index => $item)
+                                                    <p class="m-0">{{ $index + 1 }}. {{ $item }}</p>
+                                                @empty
+                                                    -
+                                                @endforelse
                                             </div>
                                         </div>
                                     </div>
@@ -370,7 +379,8 @@
                         alert('Pilih status pengesahan terlebih dahulu!');
                         return;
                     }
-                    if ((statusValue === 'reject' || statusValue === 'correction') && catatanInput.value.trim() ===
+                    if ((statusValue === 'reject' || statusValue === 'correction') && catatanInput.value
+                        .trim() ===
                         '') {
                         document.getElementById('catatanError').style.display = 'block';
                         catatanInput.focus();

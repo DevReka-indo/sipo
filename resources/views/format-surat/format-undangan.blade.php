@@ -269,149 +269,6 @@
 
             <div class="letter">
 
-                @php
-                    // ── Bangun daftar penerima (Kepada) ────────────────────────────────────────
-                    $rawTujuanIds = collect(explode(';', (string) ($undangan->tujuan ?? '')))
-                        ->map(fn($id) => trim($id))
-                        ->filter(fn($id) => $id !== '' && is_numeric($id))
-                        ->map(fn($id) => (int) $id)
-                        ->unique()
-                        ->values();
-
-                    $legacyTujuanNames = collect(explode(';', (string) ($undangan->tujuan_string ?? '')))
-                        ->map(fn($name) => trim($name))
-                        ->filter(fn($name) => $name !== '')
-                        ->values()
-                        ->all();
-
-                    $tujuanRingkas = [];
-
-                    if ($rawTujuanIds->isNotEmpty()) {
-                        $tujuanUsers = \App\Models\User::with([
-                            'position:id_position,nm_position',
-                            'department:id_department,name_department',
-                        ])
-                            ->whereIn('id', $rawTujuanIds)
-                            ->get([
-                                'id',
-                                'firstname',
-                                'lastname',
-                                'position_id_position',
-                                'director_id_director',
-                                'divisi_id_divisi',
-                                'department_id_department',
-                                'section_id_section',
-                                'unit_id_unit',
-                            ]);
-
-                        $tujuanIdSet   = $tujuanUsers->pluck('id')->flip();
-                        $remainingIds  = $tujuanUsers->pluck('id')->all();
-
-                        $directorMap   = \App\Models\Director::pluck('name_director', 'id_director');
-                        $divisionMap   = \App\Models\Divisi::pluck('nm_divisi', 'id_divisi');
-                        $departmentMap = \App\Models\Department::pluck('name_department', 'id_department');
-                        $sectionMap    = \App\Models\Section::pluck('name_section', 'id_section');
-                        $unitMap       = \App\Models\Unit::pluck('name_unit', 'id_unit');
-
-                        $sectionToDepartmentMap = \App\Models\Section::pluck('department_id_department', 'id_section');
-                        $unitToSectionMap       = \App\Models\Unit::pluck('section_id_section', 'id_unit');
-                        $groupedDepartmentIds   = [];
-                        $groupedSectionIds      = [];
-
-                        $tujuanScopes = [
-                            ['col' => 'director_id_director', 'map' => $directorMap],
-                            ['col' => 'divisi_id_divisi',     'map' => $divisionMap],
-                            ['col' => 'department_id_department', 'map' => $departmentMap],
-                            ['col' => 'section_id_section',   'map' => $sectionMap],
-                            ['col' => 'unit_id_unit',         'map' => $unitMap],
-                        ];
-
-                        foreach ($tujuanScopes as $scope) {
-                            $groupIds = $tujuanUsers
-                                ->whereIn('id', $remainingIds)
-                                ->pluck($scope['col'])
-                                ->filter()
-                                ->unique()
-                                ->values();
-
-                            foreach ($groupIds as $groupId) {
-                                if ($scope['col'] === 'section_id_section') {
-                                    $parentDeptId = $sectionToDepartmentMap[$groupId] ?? null;
-                                    if (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true)) {
-                                        $coveredIds   = $tujuanUsers->where('section_id_section', $groupId)->pluck('id')->all();
-                                        $remainingIds = array_values(array_diff($remainingIds, $coveredIds));
-                                        continue;
-                                    }
-                                }
-
-                                if ($scope['col'] === 'unit_id_unit') {
-                                    $parentSectionId = $unitToSectionMap[$groupId] ?? null;
-                                    $parentDeptId    = $parentSectionId ? ($sectionToDepartmentMap[$parentSectionId] ?? null) : null;
-
-                                    if ((!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) ||
-                                        (!empty($parentDeptId)    && in_array((int) $parentDeptId, $groupedDepartmentIds, true))) {
-                                        $coveredIds   = $tujuanUsers->where('unit_id_unit', $groupId)->pluck('id')->all();
-                                        $remainingIds = array_values(array_diff($remainingIds, $coveredIds));
-                                        continue;
-                                    }
-                                }
-
-                                $allMemberIds = \App\Models\User::where($scope['col'], $groupId)->pluck('id');
-                                if ($allMemberIds->isEmpty()) continue;
-
-                                $allSelected = $allMemberIds->every(fn($mid) => $tujuanIdSet->has($mid));
-                                if ($allSelected) {
-                                    $tujuanRingkas[] = $scope['map'][$groupId] ?? ('ID ' . $groupId);
-
-                                    if ($scope['col'] === 'department_id_department') $groupedDepartmentIds[] = (int) $groupId;
-                                    if ($scope['col'] === 'section_id_section')       $groupedSectionIds[]    = (int) $groupId;
-
-                                    $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
-                                }
-                            }
-                        }
-
-                        $remainingTujuanUsers = $tujuanUsers
-                            ->whereIn('id', $remainingIds)
-                            ->sortBy(fn($u) => trim($u->firstname . ' ' . $u->lastname));
-
-                        foreach ($remainingTujuanUsers as $user) {
-                            $fullName      = trim($user->firstname . ' ' . $user->lastname);
-                            $positionName  = $user->position->nm_position ?? '-';
-                            $positionLower = strtolower($positionName);
-                            $isStaff       = str_contains($positionLower, 'staff') || str_contains($positionLower, 'staf');
-
-                            $bagianKerja = '-';
-                            if ($isStaff) {
-                                if (!empty($user->unit_id_unit) && isset($unitMap[$user->unit_id_unit]))                         $bagianKerja = $unitMap[$user->unit_id_unit];
-                                elseif (!empty($user->section_id_section) && isset($sectionMap[$user->section_id_section]))     $bagianKerja = $sectionMap[$user->section_id_section];
-                                elseif (!empty($user->department_id_department) && isset($departmentMap[$user->department_id_department])) $bagianKerja = $departmentMap[$user->department_id_department];
-                                elseif (!empty($user->divisi_id_divisi) && isset($divisionMap[$user->divisi_id_divisi]))        $bagianKerja = $divisionMap[$user->divisi_id_divisi];
-                                elseif (!empty($user->director_id_director) && isset($directorMap[$user->director_id_director])) $bagianKerja = $directorMap[$user->director_id_director];
-                            } else {
-                                if (!empty($user->department_id_department) && isset($departmentMap[$user->department_id_department])) $bagianKerja = $departmentMap[$user->department_id_department];
-                                elseif (!empty($user->divisi_id_divisi) && isset($divisionMap[$user->divisi_id_divisi]))        $bagianKerja = $divisionMap[$user->divisi_id_divisi];
-                                elseif (!empty($user->section_id_section) && isset($sectionMap[$user->section_id_section]))     $bagianKerja = $sectionMap[$user->section_id_section];
-                                elseif (!empty($user->unit_id_unit) && isset($unitMap[$user->unit_id_unit]))                    $bagianKerja = $unitMap[$user->unit_id_unit];
-                                elseif (!empty($user->director_id_director) && isset($directorMap[$user->director_id_director])) $bagianKerja = $directorMap[$user->director_id_director];
-                            }
-
-                            $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
-                            $tujuanRingkas[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
-                        }
-                    }
-
-                    $tujuanList = $rawTujuanIds->isNotEmpty()
-                        ? array_values(array_filter($tujuanRingkas))
-                        : array_values(array_filter($legacyTujuanNames));
-
-                    // ── FITUR BARU ──────────────────────────────────────────────────────────────
-                    // Jika penerima lebih dari 1, header hanya tampilkan "Penerima terlampir".
-                    // Daftar lengkap akan ditampilkan di bawah (sebelum tembusan).
-                    $tujuanTerlampir = count($tujuanList) > 1;
-                    // ────────────────────────────────────────────────────────────────────────────
-                @endphp
-
                 <table class="header1">
                     <tr>
                         <td>Nomor</td>
@@ -451,46 +308,74 @@
                         if (isset($isPdf) && $isPdf) {
                             $isiUndangan = preg_replace_callback(
                                 '/<table([^>]*)>(.*?)<\/table>/is',
-                                function($tableMatch) {
-                                    $tableAttrs   = $tableMatch[1];
+                                function ($tableMatch) {
+                                    $tableAttrs = $tableMatch[1];
                                     $tableContent = $tableMatch[2];
-                                    $widths       = [];
+                                    $widths = [];
 
                                     // Extract width dari colgroup
                                     if (preg_match('/<colgroup>(.*?)<\/colgroup>/is', $tableContent, $colgroupMatch)) {
-                                        preg_match_all('/<col[^>]*style="[^"]*width:\s*([^;"]+)[^"]*"[^>]*>/i', $colgroupMatch[1], $widthMatches);
+                                        preg_match_all(
+                                            '/<col[^>]*style="[^"]*width:\s*([^;"]+)[^"]*"[^>]*>/i',
+                                            $colgroupMatch[1],
+                                            $widthMatches,
+                                        );
                                         if (!empty($widthMatches[1])) {
                                             $widths = array_map('trim', $widthMatches[1]);
                                         }
-                                        $tableContent = preg_replace('/<colgroup>.*?<\/colgroup>/is', '', $tableContent);
+                                        $tableContent = preg_replace(
+                                            '/<colgroup>.*?<\/colgroup>/is',
+                                            '',
+                                            $tableContent,
+                                        );
                                     }
 
                                     if (!empty($widths)) {
                                         $tableContent = preg_replace_callback(
                                             '/<tr([^>]*)>(.*?)<\/tr>/is',
-                                            function($rowMatch) use ($widths) {
-                                                $rowAttrs   = $rowMatch[1];
+                                            function ($rowMatch) use ($widths) {
+                                                $rowAttrs = $rowMatch[1];
                                                 $rowContent = $rowMatch[2];
-                                                $cellIndex  = 0;
+                                                $cellIndex = 0;
 
                                                 $rowContent = preg_replace_callback(
                                                     '/<(td|th)([^>]*)>/i',
-                                                    function($cellMatch) use ($widths, &$cellIndex) {
-                                                        $tag   = $cellMatch[1];
+                                                    function ($cellMatch) use ($widths, &$cellIndex) {
+                                                        $tag = $cellMatch[1];
                                                         $attrs = $cellMatch[2];
 
                                                         $colspan = 1;
-                                                        if (preg_match('/colspan\s*=\s*["\']?(\d+)["\']?/i', $attrs, $colspanMatch)) {
+                                                        if (
+                                                            preg_match(
+                                                                '/colspan\s*=\s*["\']?(\d+)["\']?/i',
+                                                                $attrs,
+                                                                $colspanMatch,
+                                                            )
+                                                        ) {
                                                             $colspan = (int) $colspanMatch[1];
                                                         }
 
                                                         if (isset($widths[$cellIndex])) {
                                                             $width = $widths[$cellIndex];
-                                                            if (preg_match('/style\s*=\s*"([^"]*)"/i', $attrs, $styleMatch)) {
+                                                            if (
+                                                                preg_match(
+                                                                    '/style\s*=\s*"([^"]*)"/i',
+                                                                    $attrs,
+                                                                    $styleMatch,
+                                                                )
+                                                            ) {
                                                                 $existingStyle = $styleMatch[1];
                                                                 if (!preg_match('/width\s*:/i', $existingStyle)) {
-                                                                    $newStyle = rtrim($existingStyle, '; ') . '; width: ' . $width . ';';
-                                                                    $attrs = preg_replace('/style\s*=\s*"[^"]*"/i', 'style="' . $newStyle . '"', $attrs);
+                                                                    $newStyle =
+                                                                        rtrim($existingStyle, '; ') .
+                                                                        '; width: ' .
+                                                                        $width .
+                                                                        ';';
+                                                                    $attrs = preg_replace(
+                                                                        '/style\s*=\s*"[^"]*"/i',
+                                                                        'style="' . $newStyle . '"',
+                                                                        $attrs,
+                                                                    );
                                                                 }
                                                             } else {
                                                                 $attrs .= ' style="width: ' . $width . ';"';
@@ -500,25 +385,25 @@
                                                         $cellIndex += $colspan;
                                                         return '<' . $tag . $attrs . '>';
                                                     },
-                                                    $rowContent
+                                                    $rowContent,
                                                 );
 
                                                 return '<tr' . $rowAttrs . '>' . $rowContent . '</tr>';
                                             },
-                                            $tableContent
+                                            $tableContent,
                                         );
                                     }
 
                                     return '<table' . $tableAttrs . '>' . $tableContent . '</table>';
                                 },
-                                $isiUndangan
+                                $isiUndangan,
                             );
                         }
                     @endphp
 
                     <div class="fill">
                         <div class="editor-content"
-                             style="text-align: justify; width: 100%; max-width: 100%; overflow-x: auto; line-height: 1.5;">
+                            style="text-align: justify; width: 100%; max-width: 100%; overflow-x: auto; line-height: 1.5;">
                             {!! $isiUndangan !!}
                         </div>
                     </div>
@@ -541,7 +426,8 @@
                     <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
                         <tr>
                             <td style="width: 60%;"></td>
-                            <td style="width: 40%; text-align: center; vertical-align: top; padding: 10px; border: none;">
+                            <td
+                                style="width: 40%; text-align: center; vertical-align: top; padding: 10px; border: none;">
                                 <p style="text-align: center; margin-bottom: 5px;"><b>Hormat kami,</b></p>
 
                                 @if ($isDirektur)
@@ -557,7 +443,8 @@
 
                                 @if (!empty($undangan->qr_approved_by))
                                     <div style="margin: 10px 0; text-align: center;">
-                                        <img src="data:image/png;base64,{{ $undangan->qr_approved_by }}" width="150">
+                                        <img src="data:image/png;base64,{{ $undangan->qr_approved_by }}"
+                                            width="150">
                                     </div>
                                 @else
                                     <br>
@@ -570,115 +457,26 @@
                         </tr>
                     </table>
 
-                    @php
-                        $buildGroupedRecipientList = function (?string $rawRecipients) {
-                            $parsedValues = array_values(
-                                array_filter(explode(';', (string) $rawRecipients), fn($t) => trim($t) !== ''),
-                            );
-
-                            if (empty($parsedValues)) {
-                                return [];
-                            }
-
-                            $selectedUserIds = collect($parsedValues)
-                                ->filter(fn($t) => is_numeric($t))
-                                ->map(fn($t) => (int) $t)
-                                ->unique()
-                                ->values();
-
-                            $legacyRecipients = collect($parsedValues)->filter(fn($t) => !is_numeric($t))->values()->all();
-
-                            if ($selectedUserIds->isEmpty()) {
-                                return array_values(array_filter($legacyRecipients));
-                            }
-
-                            $selectedUsers = \App\Models\User::whereIn('id', $selectedUserIds)
-                                ->get([
-                                    'id',
-                                    'firstname',
-                                    'lastname',
-                                    'director_id_director',
-                                    'divisi_id_divisi',
-                                    'department_id_department',
-                                    'section_id_section',
-                                    'unit_id_unit',
-                                ]);
-
-                            if ($selectedUsers->isEmpty()) {
-                                return array_values(array_filter($legacyRecipients));
-                            }
-
-                            $selectedIdSet = $selectedUsers->pluck('id')->flip();
-                            $remainingIds  = $selectedUsers->pluck('id')->all();
-
-                            $directorMap   = \App\Models\Director::pluck('name_director', 'id_director');
-                            $divisionMap   = \App\Models\Divisi::pluck('nm_divisi', 'id_divisi');
-                            $departmentMap = \App\Models\Department::pluck('name_department', 'id_department');
-                            $sectionMap    = \App\Models\Section::pluck('name_section', 'id_section');
-                            $unitMap       = \App\Models\Unit::pluck('name_unit', 'id_unit');
-
-                            $result = [];
-                            $scopes = [
-                                ['col' => 'director_id_director',    'label' => 'Direktur',   'map' => $directorMap],
-                                ['col' => 'divisi_id_divisi',        'label' => 'Divisi',     'map' => $divisionMap],
-                                ['col' => 'department_id_department','label' => 'Departemen', 'map' => $departmentMap],
-                                ['col' => 'section_id_section',      'label' => 'Bagian',     'map' => $sectionMap],
-                                ['col' => 'unit_id_unit',            'label' => 'Unit',       'map' => $unitMap],
-                            ];
-
-                            foreach ($scopes as $scope) {
-                                $groupIds = $selectedUsers
-                                    ->whereIn('id', $remainingIds)
-                                    ->pluck($scope['col'])
-                                    ->filter()
-                                    ->unique()
-                                    ->values();
-
-                                foreach ($groupIds as $groupId) {
-                                    $allMemberIds = \App\Models\User::where($scope['col'], $groupId)->pluck('id');
-                                    if ($allMemberIds->isEmpty()) continue;
-
-                                    $allSelected = $allMemberIds->every(fn($memberId) => $selectedIdSet->has($memberId));
-                                    if ($allSelected) {
-                                        $scopeName = $scope['map'][$groupId] ?? ('ID ' . $groupId);
-                                        $result[]  = $scope['label'] . ': ' . $scopeName;
-                                        $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
-                                    }
-                                }
-                            }
-
-                            foreach ($selectedUsers->whereIn('id', $remainingIds)->sortBy(fn($u) => trim(($u->firstname ?? '') . ' ' . ($u->lastname ?? ''))) as $user) {
-                                $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
-                                if ($fullName !== '') {
-                                    $result[] = $fullName;
-                                }
-                            }
-
-                            return array_values(array_filter(array_merge($result, $legacyRecipients)));
-                        };
-
-                        $tembusanList = $buildGroupedRecipientList($undangan->tembusan ?? null);
-                    @endphp
-
-                    {{-- ── FITUR BARU: Kepada terlampir ditampilkan di sini, paling atas ──────── --}}
-                    @if ($tujuanTerlampir)
+                    @if ($tujuanTerlampir ?? false)
                         <div class="tembusan" style="margin-top: 30px; text-align: left;">
                             <b>Kepada :</b>
                             <ol style="margin: 0; padding-left: 20px;">
-                                @foreach ($tujuanList as $name)
+                                @foreach ($tujuanList ?? [] as $name)
                                     <li>{{ $name }}</li>
                                 @endforeach
                             </ol>
                         </div>
                     @endif
-                    {{-- ─────────────────────────────────────────────────────────────────────── --}}
 
-                    @if (!empty($tembusanList))
-                        <div class="tembusan" style="margin-top: {{ $tujuanTerlampir ? '20px' : '30px' }}; text-align: left;">
+                    @if (!empty($tembusanList ?? []))
+                        <div class="tembusan"
+                            style="margin-top: {{ $tujuanTerlampir ?? false ? '20px' : '30px' }}; text-align: left;">
                             <b>Tembusan :</b>
-                            @foreach ($tembusanList as $tembusan)
-                                <p style="margin: 0;">{{ $tembusan }}</p>
-                            @endforeach
+                            <ol style="margin: 0; padding-left: 20px;">
+                                @foreach ($tembusanList as $tembusan)
+                                    <li>{{ $tembusan }}</li>
+                                @endforeach
+                            </ol>
                         </div>
                     @endif
 

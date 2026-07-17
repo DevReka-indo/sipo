@@ -17,6 +17,7 @@ use App\Models\Memo;
 use App\Models\Section;
 use App\Models\Unit;
 use App\Models\Disposisi;
+use App\Support\PositionOrder;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\CetakPDFController;
 use Illuminate\Support\Facades\Validator;
@@ -29,6 +30,7 @@ use App\Services\QrCodeService;
 use App\Models\BagianKerja;
 use App\Services\NotifService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class UndanganController extends Controller
 {
@@ -931,20 +933,20 @@ class UndanganController extends Controller
         })->pluck('id')->toArray();
     }
 
-    private function parseRecipientUserIds(?string $raw): array
-    {
-        if (!$raw) {
-            return [];
-        }
+    // private function parseRecipientUserIds(?string $raw): array
+    // {
+    //     if (!$raw) {
+    //         return [];
+    //     }
 
-        return collect(explode(';', $raw))
-            ->map(fn($v) => trim($v))
-            ->filter(fn($v) => $v !== '' && is_numeric($v))
-            ->map(fn($v) => (int) $v)
-            ->unique()
-            ->values()
-            ->all();
-    }
+    //     return collect(explode(';', $raw))
+    //         ->map(fn($v) => trim($v))
+    //         ->filter(fn($v) => $v !== '' && is_numeric($v))
+    //         ->map(fn($v) => (int) $v)
+    //         ->unique()
+    //         ->values()
+    //         ->all();
+    // }
 
     private function resolveApproverUserId(Undangan $undangan, ?Request $request = null): ?int
     {
@@ -1026,94 +1028,94 @@ class UndanganController extends Controller
         }
     }
 
-    private function buildGroupedRecipientDisplayList(array $selectedUserIds): array
-    {
-        if (empty($selectedUserIds)) {
-            return [];
-        }
+    // private function buildGroupedRecipientDisplayList(array $selectedUserIds): array
+    // {
+    //     if (empty($selectedUserIds)) {
+    //         return [];
+    //     }
 
-        $selectedUsers = User::with(['position:id_position,nm_position'])
-            ->whereIn('id', $selectedUserIds)
-            ->get([
-                'id',
-                'firstname',
-                'lastname',
-                'position_id_position',
-                'director_id_director',
-                'divisi_id_divisi',
-                'department_id_department',
-                'section_id_section',
-                'unit_id_unit',
-            ]);
+    //     $selectedUsers = User::with(['position:id_position,nm_position'])
+    //         ->whereIn('id', $selectedUserIds)
+    //         ->get([
+    //             'id',
+    //             'firstname',
+    //             'lastname',
+    //             'position_id_position',
+    //             'director_id_director',
+    //             'divisi_id_divisi',
+    //             'department_id_department',
+    //             'section_id_section',
+    //             'unit_id_unit',
+    //         ]);
 
-        if ($selectedUsers->isEmpty()) {
-            return [];
-        }
+    //     if ($selectedUsers->isEmpty()) {
+    //         return [];
+    //     }
 
-        $selectedIdSet = $selectedUsers->pluck('id')->flip();
-        $remainingIds = $selectedUsers->pluck('id')->all();
+    //     $selectedIdSet = $selectedUsers->pluck('id')->flip();
+    //     $remainingIds = $selectedUsers->pluck('id')->all();
 
-        $directorMap = Director::pluck('name_director', 'id_director');
-        $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
-        $departmentMap = Department::pluck('name_department', 'id_department');
-        $sectionMap = Section::pluck('name_section', 'id_section');
-        $unitMap = Unit::pluck('name_unit', 'id_unit');
+    //     $directorMap = Director::pluck('name_director', 'id_director');
+    //     $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
+    //     $departmentMap = Department::pluck('name_department', 'id_department');
+    //     $sectionMap = Section::pluck('name_section', 'id_section');
+    //     $unitMap = Unit::pluck('name_unit', 'id_unit');
 
-        $result = [];
-        $scopes = [
-            ['col' => 'director_id_director', 'label' => 'Direktur', 'map' => $directorMap],
-            ['col' => 'divisi_id_divisi', 'label' => 'Divisi', 'map' => $divisionMap],
-            ['col' => 'department_id_department', 'label' => 'Departemen', 'map' => $departmentMap],
-            ['col' => 'section_id_section', 'label' => 'Bagian', 'map' => $sectionMap],
-            ['col' => 'unit_id_unit', 'label' => 'Unit', 'map' => $unitMap],
-        ];
+    //     $result = [];
+    //     $scopes = [
+    //         ['col' => 'director_id_director', 'label' => 'Direktur', 'map' => $directorMap],
+    //         ['col' => 'divisi_id_divisi', 'label' => 'Divisi', 'map' => $divisionMap],
+    //         ['col' => 'department_id_department', 'label' => 'Departemen', 'map' => $departmentMap],
+    //         ['col' => 'section_id_section', 'label' => 'Bagian', 'map' => $sectionMap],
+    //         ['col' => 'unit_id_unit', 'label' => 'Unit', 'map' => $unitMap],
+    //     ];
 
-        foreach ($scopes as $scope) {
-            $groupIds = $selectedUsers
-                ->whereIn('id', $remainingIds)
-                ->pluck($scope['col'])
-                ->filter()
-                ->unique()
-                ->values();
+    //     foreach ($scopes as $scope) {
+    //         $groupIds = $selectedUsers
+    //             ->whereIn('id', $remainingIds)
+    //             ->pluck($scope['col'])
+    //             ->filter()
+    //             ->unique()
+    //             ->values();
 
-            foreach ($groupIds as $groupId) {
-                $allMemberIds = User::where($scope['col'], $groupId)->pluck('id');
-                if ($allMemberIds->isEmpty()) {
-                    continue;
-                }
+    //         foreach ($groupIds as $groupId) {
+    //             $allMemberIds = User::where($scope['col'], $groupId)->pluck('id');
+    //             if ($allMemberIds->isEmpty()) {
+    //                 continue;
+    //             }
 
-                $allSelected = $allMemberIds->every(fn($memberId) => $selectedIdSet->has($memberId));
-                if ($allSelected) {
-                    $scopeName = $scope['map'][$groupId] ?? ('ID ' . $groupId);
-                    $result[] = $scope['label'] . ': ' . $scopeName;
-                    $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
-                }
-            }
-        }
+    //             $allSelected = $allMemberIds->every(fn($memberId) => $selectedIdSet->has($memberId));
+    //             if ($allSelected) {
+    //                 $scopeName = $scope['map'][$groupId] ?? ('ID ' . $groupId);
+    //                 $result[] = $scope['label'] . ': ' . $scopeName;
+    //                 $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
+    //             }
+    //         }
+    //     }
 
-        foreach ($selectedUsers->whereIn('id', $remainingIds) as $user) {
-            $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
-            $positionName = $user->position->nm_position ?? '-';
+    //     foreach ($selectedUsers->whereIn('id', $remainingIds) as $user) {
+    //         $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+    //         $positionName = $user->position->nm_position ?? '-';
 
-            $bagianKerja = '-';
-            if (!empty($user->unit_id_unit) && isset($unitMap[$user->unit_id_unit])) {
-                $bagianKerja = $unitMap[$user->unit_id_unit];
-            } elseif (!empty($user->section_id_section) && isset($sectionMap[$user->section_id_section])) {
-                $bagianKerja = $sectionMap[$user->section_id_section];
-            } elseif (!empty($user->department_id_department) && isset($departmentMap[$user->department_id_department])) {
-                $bagianKerja = $departmentMap[$user->department_id_department];
-            } elseif (!empty($user->divisi_id_divisi) && isset($divisionMap[$user->divisi_id_divisi])) {
-                $bagianKerja = $divisionMap[$user->divisi_id_divisi];
-            } elseif (!empty($user->director_id_director) && isset($directorMap[$user->director_id_director])) {
-                $bagianKerja = $directorMap[$user->director_id_director];
-            }
+    //         $bagianKerja = '-';
+    //         if (!empty($user->unit_id_unit) && isset($unitMap[$user->unit_id_unit])) {
+    //             $bagianKerja = $unitMap[$user->unit_id_unit];
+    //         } elseif (!empty($user->section_id_section) && isset($sectionMap[$user->section_id_section])) {
+    //             $bagianKerja = $sectionMap[$user->section_id_section];
+    //         } elseif (!empty($user->department_id_department) && isset($departmentMap[$user->department_id_department])) {
+    //             $bagianKerja = $departmentMap[$user->department_id_department];
+    //         } elseif (!empty($user->divisi_id_divisi) && isset($divisionMap[$user->divisi_id_divisi])) {
+    //             $bagianKerja = $divisionMap[$user->divisi_id_divisi];
+    //         } elseif (!empty($user->director_id_director) && isset($directorMap[$user->director_id_director])) {
+    //             $bagianKerja = $directorMap[$user->director_id_director];
+    //         }
 
-            $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
-            $result[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
-        }
+    //         $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
+    //         $result[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
+    //     }
 
-        return array_values(array_filter($result));
-    }
+    //     return array_values(array_filter($result));
+    // }
 
     public function store(Request $request)
     {
@@ -1789,6 +1791,129 @@ class UndanganController extends Controller
         }
     }
 
+    // public function view($id)
+    // {
+    //     $userId = Auth::id();
+
+    //     $undangan = Undangan::where('id_undangan', $id)
+    //         ->where(function ($query) use ($userId, $id) {
+    //             $query
+    //                 ->whereHas('kirimDocument', function ($sub) use ($userId) {
+    //                     $sub->where('jenis_document', 'undangan')
+    //                         ->where('id_penerima', $userId);
+    //                 })
+    //                 ->orWhere(function ($sub) use ($userId) {
+    //                     $sub->where('tembusan', 'like', $userId . ';%')
+    //                         ->orWhere('tembusan', 'like', '%;' . $userId . ';%')
+    //                         ->orWhere('tembusan', 'like', '%;' . $userId)
+    //                         ->orWhere('tembusan', '=', (string) $userId);
+    //                 })
+    //                 ->orWhere(function ($sub) use ($userId) {
+    //                     $sub->where('bcc', 'like', $userId . ';%')
+    //                         ->orWhere('bcc', 'like', '%;' . $userId . ';%')
+    //                         ->orWhere('bcc', 'like', '%;' . $userId)
+    //                         ->orWhere('bcc', '=', (string) $userId);
+    //                 })
+    //                 ->orWhere('pembuat', $userId)
+    //                 ->orWhereExists(function ($sub) use ($userId, $id) {
+    //                     $sub->selectRaw(1)
+    //                         ->from('disposisi')
+    //                         ->where('document_type', 'undangan')
+    //                         ->where('document_id', $id)
+    //                         ->whereRaw('JSON_CONTAINS(kepada_user_id, ?)', [json_encode((int) $userId)]);
+    //                 });
+    //         })
+    //         ->firstOrFail();
+
+    //     $divDeptKode = $this->getDivDeptKode(Auth::user());
+
+    //     $idArray = is_array($undangan->tujuan)
+    //         ? $undangan->tujuan
+    //         : explode(';', $undangan->tujuan);
+
+    //     $users = User::whereIn('id', $idArray)->with('position')->get();
+
+    //     $pdfController = new CetakPDFController();
+
+    //     $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //         ->whereIn('id', $idArray)
+    //         ->get()
+    //         ->map(function ($user) use ($pdfController) {
+    //             $level = $pdfController->detectLevel($user);
+    //             $user->level_kerja = $level;
+    //             $user->bagian_text = $pdfController->getBagianText($user, $level);
+
+    //             return $user;
+    //         })
+    //         ->sortBy(function ($user) {
+    //             return optional($user->position)->id_position;
+    //         })
+    //         ->values();
+
+    //     $undangan->tujuan = $listNama->map(function ($user, $index) {
+    //         return ($index + 1) . '. '
+    //             . $user->position->nm_position . ' '
+    //             . $user->bagian_text . ' '
+    //             . '(' . $user->firstname . ' ' . $user->lastname . ')';
+    //     })->implode("\n");
+
+    //     $undanganCollection = collect([$undangan]);
+
+    //     $undanganCollection->transform(function ($undangan) use ($userId) {
+    //         $isPenerimaDisposisi = Disposisi::where('document_type', 'undangan')
+    //             ->where('document_id', $undangan->id_undangan)
+    //             ->whereJsonContains('kepada_user_id', (int) $userId)
+    //             ->exists();
+
+    //         if ($isPenerimaDisposisi) {
+    //             $undangan->final_status = 'disposisi';
+    //         } elseif ($undangan->divisi_id_divisi === Auth::user()->divisi_id_divisi) {
+    //             $undangan->final_status = $undangan->status;
+    //         } else {
+    //             $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
+    //                 ->where('jenis_document', 'undangan')
+    //                 ->where('id_penerima', $userId)
+    //                 ->first();
+
+    //             $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
+    //         }
+
+    //         return $undangan;
+    //     });
+
+    //     $undangan = $undanganCollection->first();
+
+    //     $lampiranData = [];
+    //     if ($undangan->lampiran) {
+    //         $jsonData = json_decode($undangan->lampiran, true);
+
+    //         if ($jsonData !== null && is_array($jsonData)) {
+    //             $lampiranData = $jsonData;
+    //         }
+    //     }
+
+    //     $tembusanList = $this->buildGroupedRecipientDisplayList(
+    //         $this->parseRecipientUserIds($undangan->tembusan ?? null)
+    //     );
+
+    //     $canViewBcc = Auth::id() === (int) $undangan->pembuat;
+    //     $bccDisplayList = [];
+
+    //     if ($canViewBcc) {
+    //         $bccDisplayList = $this->buildGroupedRecipientDisplayList(
+    //             $this->parseRecipientUserIds($undangan->bcc ?? null)
+    //         );
+    //     }
+
+    //     return view('undangan.view-undangan', compact(
+    //         'undangan',
+    //         'lampiranData',
+    //         'tembusanList',
+    //         'canViewBcc',
+    //         'bccDisplayList'
+    //     ));
+    // }
+
     public function view($id)
     {
         $userId = Auth::id();
@@ -1825,35 +1950,11 @@ class UndanganController extends Controller
 
         $divDeptKode = $this->getDivDeptKode(Auth::user());
 
-        $idArray = is_array($undangan->tujuan)
-            ? $undangan->tujuan
-            : explode(';', $undangan->tujuan);
-
-        $users = User::whereIn('id', $idArray)->with('position')->get();
-
-        $pdfController = new CetakPDFController();
-
-        $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-            ->whereIn('id', $idArray)
-            ->get()
-            ->map(function ($user) use ($pdfController) {
-                $level = $pdfController->detectLevel($user);
-                $user->level_kerja = $level;
-                $user->bagian_text = $pdfController->getBagianText($user, $level);
-
-                return $user;
-            })
-            ->sortBy(function ($user) {
-                return optional($user->position)->id_position;
-            })
-            ->values();
-
-        $undangan->tujuan = $listNama->map(function ($user, $index) {
-            return ($index + 1) . '. '
-                . $user->position->nm_position . ' '
-                . $user->bagian_text . ' '
-                . '(' . $user->firstname . ' ' . $user->lastname . ')';
-        })->implode("\n");
+        $tujuanUserIds = $this->parseRecipientUserIds($undangan->tujuan);
+        $tujuanLegacyNames = empty($tujuanUserIds)
+            ? $this->parseLegacyRecipientNames($undangan->tujuan, $undangan->tujuan_string ?? null)
+            : [];
+        $tujuanDisplayList = $this->buildIndividualRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
 
         $undanganCollection = collect([$undangan]);
 
@@ -1882,6 +1983,7 @@ class UndanganController extends Controller
         $undangan = $undanganCollection->first();
 
         $lampiranData = [];
+
         if ($undangan->lampiran) {
             $jsonData = json_decode($undangan->lampiran, true);
 
@@ -1890,107 +1992,355 @@ class UndanganController extends Controller
             }
         }
 
-        $tembusanList = $this->buildGroupedRecipientDisplayList(
-            $this->parseRecipientUserIds($undangan->tembusan ?? null)
-        );
+        $tembusanUserIds = $this->parseRecipientUserIds($undangan->tembusan ?? null);
+        $tembusanLegacyNames = empty($tembusanUserIds)
+            ? $this->parseLegacyRecipientNames($undangan->tembusan ?? null)
+            : [];
+        $tembusanList = $this->buildIndividualRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
-        $canViewBcc = Auth::id() === (int) $undangan->pembuat;
+        $canViewBcc = (int) Auth::id() === (int) $undangan->pembuat;
         $bccDisplayList = [];
 
         if ($canViewBcc) {
-            $bccDisplayList = $this->buildGroupedRecipientDisplayList(
-                $this->parseRecipientUserIds($undangan->bcc ?? null)
-            );
+            $bccUserIds = $this->parseRecipientUserIds($undangan->bcc ?? null);
+            $bccLegacyNames = empty($bccUserIds)
+                ? $this->parseLegacyRecipientNames($undangan->bcc ?? null)
+                : [];
+            $bccDisplayList = $this->buildIndividualRecipientDisplayList($bccUserIds, $bccLegacyNames);
         }
 
         return view('undangan.view-undangan', compact(
             'undangan',
             'lampiranData',
+            'tujuanDisplayList',
             'tembusanList',
             'canViewBcc',
             'bccDisplayList'
         ));
     }
-    // public function view($id)
-    // {
-    //     $userId = Auth::id(); // Ambil ID user yang sedang login
-    //     $undangan = Undangan::where('id_undangan', $id)->firstOrFail();
-    //     $divDeptKode = $this->getDivDeptKode(Auth::user());
 
-    //     // EDIT: Tambahkan eager loading untuk relationship pembuat
-    //     // $undangan = Undangan::with('user')->findOrFail($id);
+    private function buildIndividualRecipientDisplayList(array $userIds, array $legacyNames = []): array
+    {
+        if (empty($userIds)) {
+            return array_values(array_filter($legacyNames));
+        }
 
-    //     // Konversi tujuan ID menjadi array
-    //     $idArray = is_array($undangan->tujuan)
-    //         ? $undangan->tujuan
-    //         : explode(';', $undangan->tujuan);
+        $users = User::with([
+            'position:id_position,nm_position',
+            'director:id_director,name_director',
+            'divisi:id_divisi,nm_divisi',
+            'department:id_department,name_department',
+            'section:id_section,name_section',
+            'unit:id_unit,name_unit',
+        ])
+            ->whereIn('id', $userIds)
+            ->get([
+                'id',
+                'firstname',
+                'lastname',
+                'position_id_position',
+                'director_id_director',
+                'divisi_id_divisi',
+                'department_id_department',
+                'section_id_section',
+                'unit_id_unit',
+            ]);
 
-    //     $users = User::whereIn('id', $idArray)->with('position')->get();
-    //     $pdfController = new CetakPDFController();
-    //     // Ambil user lengkap beserta relasi organisasi
-    //     $listNama = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-    //         ->whereIn('id', $idArray)
-    //         ->get()
-    //         ->map(function ($user, $key) use ($pdfController) {
-    //             $level = $pdfController->detectLevel($user);
-    //             $user->level_kerja = $level;
-    //             $user->bagian_text = $pdfController->getBagianText($user, $level);
-    //             return $user;
-    //         })
-    //         ->sortBy(function ($user) {
-    //             return optional($user->position)->id_position;
-    //         })
-    //         ->values();
+        if ($users->isEmpty()) {
+            return array_values(array_filter($legacyNames));
+        }
 
-    //     $undangan->tujuan = $listNama->map(function ($user, $index) {
-    //         return ($index + 1) . '. '
-    //             . $user->position->nm_position . ' '
-    //             . $user->bagian_text . ' '
-    //             . '(' . $user->firstname . ' ' . $user->lastname . ')';
-    //     })->implode("\n");
+        $users = PositionOrder::sortUsers($users);
 
-    //     $undanganCollection = collect([$undangan]); // Bungkus dalam collection
+        return $users
+            ->map(function ($user) {
+                $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+                $positionName = optional($user->position)->nm_position ?? '-';
+                $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
 
-    //     $undanganCollection->transform(function ($undangan) use ($userId) {
-    //         if ($undangan->divisi_id_divisi === Auth::user()->divisi_id_divisi) {
-    //             $undangan->final_status = $undangan->status; // Undangan dari divisi sendiri
-    //         } else {
-    //             $statusKirim = Kirim_Document::where('id_document', $undangan->id_undangan)
-    //                 ->where('jenis_document', 'undangan')
-    //                 ->where('id_penerima', $userId)
-    //                 ->first();
-    //             $undangan->final_status = $statusKirim ? $statusKirim->status : '-';
-    //         }
-    //         return $undangan;
-    //     });
+                $bagianKerja = $this->getRecipientWorkUnitLabel($user, [
+                    'director' => collect([$user->director_id_director => optional($user->director)->name_director]),
+                    'division' => collect([$user->divisi_id_divisi => optional($user->divisi)->nm_divisi]),
+                    'department' => collect([$user->department_id_department => optional($user->department)->name_department]),
+                    'section' => collect([$user->section_id_section => optional($user->section)->name_section]),
+                    'unit' => collect([$user->unit_id_unit => optional($user->unit)->name_unit]),
+                ]);
 
-    //     // Karena hanya satu memo, kita bisa mengambil dari collection lagi
-    //     $undangan = $undanganCollection->first();
+                return $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
 
-    //     // Parse lampiran data
-    //     $lampiranData = [];
-    //     if ($undangan->lampiran) {
-    //         // Coba decode sebagai JSON dulu (untuk data baru)
-    //         $jsonData = json_decode($undangan->lampiran, true);
-    //         if ($jsonData !== null && is_array($jsonData)) {
-    //             $lampiranData = $jsonData;
-    //         } else {
-    //             // Jika bukan JSON, ini kemungkinan data BLOB lama - skip untuk sekarang
-    //             // atau bisa dikasih placeholder jika memang ada file
-    //             $lampiranData = [];
-    //         }
-    //     }
+    private function parseRecipientUserIds(?string $value): array
+    {
+        if (empty($value)) {
+            return [];
+        }
 
-    //     $tembusanList = $this->buildGroupedRecipientDisplayList($this->parseRecipientUserIds($undangan->tembusan ?? null));
+        return collect(explode(';', (string) $value))
+            ->map(fn ($id) => trim($id))
+            ->filter(fn ($id) => $id !== '' && is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
 
-    //     $canViewBcc = Auth::id() === (int) $undangan->pembuat;
-    //     $bccDisplayList = [];
-    //     if ($canViewBcc) {
-    //         $bccDisplayList = $this->buildGroupedRecipientDisplayList($this->parseRecipientUserIds($undangan->bcc ?? null));
-    //     }
+    private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
+    {
+        $fromRaw = collect(explode(';', (string) $rawValue))
+            ->map(fn ($item) => trim($item))
+            ->filter(fn ($item) => $item !== '' && !is_numeric($item))
+            ->values();
 
-    //     return view('undangan.view-undangan', compact('undangan', 'lampiranData', 'tembusanList', 'canViewBcc', 'bccDisplayList'));
-    // }
+        $fromLegacy = collect(explode(';', (string) $legacyValue))
+            ->map(fn ($item) => trim($item))
+            ->filter(fn ($item) => $item !== '')
+            ->values();
+
+        return $fromRaw
+            ->merge($fromLegacy)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function buildGroupedRecipientDisplayList(array $userIds, array $legacyNames = []): array
+    {
+        if (empty($userIds)) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $selectedUsers = User::with([
+            'position:id_position,nm_position',
+            'department:id_department,name_department',
+        ])
+            ->whereIn('id', $userIds)
+            ->get([
+                'id',
+                'firstname',
+                'lastname',
+                'position_id_position',
+                'director_id_director',
+                'divisi_id_divisi',
+                'department_id_department',
+                'section_id_section',
+                'unit_id_unit',
+            ]);
+
+        if ($selectedUsers->isEmpty()) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $displayList = [];
+
+        $selectedIdSet = $selectedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->flip();
+
+        $remainingIds = $selectedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $directorMap = Director::pluck('name_director', 'id_director');
+        $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
+        $departmentMap = Department::pluck('name_department', 'id_department');
+        $sectionMap = Section::pluck('name_section', 'id_section');
+        $unitMap = Unit::pluck('name_unit', 'id_unit');
+
+        $sectionToDepartmentMap = Section::pluck('department_id_department', 'id_section');
+        $unitToSectionMap = Unit::pluck('section_id_section', 'id_unit');
+
+        $groupedDepartmentIds = [];
+        $groupedSectionIds = [];
+
+        $scopes = [
+            [
+                'col' => 'director_id_director',
+                'label' => 'Direktorat',
+                'map' => $directorMap,
+            ],
+            [
+                'col' => 'divisi_id_divisi',
+                'label' => 'Divisi',
+                'map' => $divisionMap,
+            ],
+            [
+                'col' => 'department_id_department',
+                'label' => 'Departemen',
+                'map' => $departmentMap,
+            ],
+            [
+                'col' => 'section_id_section',
+                'label' => 'Bagian',
+                'map' => $sectionMap,
+            ],
+            [
+                'col' => 'unit_id_unit',
+                'label' => 'Unit',
+                'map' => $unitMap,
+            ],
+        ];
+
+        foreach ($scopes as $scope) {
+            $groupIds = $selectedUsers
+                ->whereIn('id', $remainingIds)
+                ->pluck($scope['col'])
+                ->filter()
+                ->unique()
+                ->values();
+
+            foreach ($groupIds as $groupId) {
+                if ($scope['col'] === 'section_id_section') {
+                    $parentDeptId = $sectionToDepartmentMap[$groupId] ?? null;
+
+                    if (
+                        !empty($parentDeptId) &&
+                        in_array((int) $parentDeptId, $groupedDepartmentIds, true)
+                    ) {
+                        $coveredUserIds = $selectedUsers
+                            ->where('section_id_section', $groupId)
+                            ->pluck('id')
+                            ->map(fn ($id) => (int) $id)
+                            ->all();
+
+                        $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+                        continue;
+                    }
+                }
+
+                if ($scope['col'] === 'unit_id_unit') {
+                    $parentSectionId = $unitToSectionMap[$groupId] ?? null;
+                    $parentDeptId = $parentSectionId
+                        ? ($sectionToDepartmentMap[$parentSectionId] ?? null)
+                        : null;
+
+                    if (
+                        (!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) ||
+                        (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true))
+                    ) {
+                        $coveredUserIds = $selectedUsers
+                            ->where('unit_id_unit', $groupId)
+                            ->pluck('id')
+                            ->map(fn ($id) => (int) $id)
+                            ->all();
+
+                        $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+                        continue;
+                    }
+                }
+
+                $allMemberIds = User::where($scope['col'], $groupId)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id);
+
+                if ($allMemberIds->isEmpty()) {
+                    continue;
+                }
+
+                $allSelected = $allMemberIds->every(
+                    fn ($memberId) => $selectedIdSet->has((int) $memberId)
+                );
+
+                if ($allSelected) {
+                    $scopeName = $scope['map'][$groupId] ?? 'ID ' . $groupId;
+
+                    $displayList[] = $scope['label'] . ': ' . $scopeName;
+
+                    if ($scope['col'] === 'department_id_department') {
+                        $groupedDepartmentIds[] = (int) $groupId;
+                    }
+
+                    if ($scope['col'] === 'section_id_section') {
+                        $groupedSectionIds[] = (int) $groupId;
+                    }
+
+                    $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
+                }
+            }
+        }
+
+        $remainingUsers = PositionOrder::sortUsers(
+            $selectedUsers->whereIn('id', $remainingIds)
+        );
+
+        foreach ($remainingUsers as $user) {
+            $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+            $positionName = $user->position->nm_position ?? '-';
+            $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
+
+            $bagianKerja = $this->getRecipientWorkUnitLabel($user, [
+                'director' => $directorMap,
+                'division' => $divisionMap,
+                'department' => $departmentMap,
+                'section' => $sectionMap,
+                'unit' => $unitMap,
+            ]);
+
+            $displayList[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
+        }
+
+        return array_values(array_filter($displayList));
+    }
+
+    private function getRecipientWorkUnitLabel(User $user, array $maps): string
+    {
+        $positionName = $user->position->nm_position ?? '-';
+        $positionLower = strtolower($positionName);
+
+        $isStaff = str_contains($positionLower, 'staff') || str_contains($positionLower, 'staf');
+
+        if ($isStaff) {
+            if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+                return $maps['unit'][$user->unit_id_unit];
+            }
+
+            if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+                return $maps['section'][$user->section_id_section];
+            }
+
+            if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+                return $maps['department'][$user->department_id_department];
+            }
+
+            if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+                return $maps['division'][$user->divisi_id_divisi];
+            }
+
+            if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+                return $maps['director'][$user->director_id_director];
+            }
+
+            return '-';
+        }
+
+        if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+            return $maps['department'][$user->department_id_department];
+        }
+
+        if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+            return $maps['division'][$user->divisi_id_divisi];
+        }
+
+        if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+            return $maps['section'][$user->section_id_section];
+        }
+
+        if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+            return $maps['unit'][$user->unit_id_unit];
+        }
+
+        if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+            return $maps['director'][$user->director_id_director];
+        }
+
+        return '-';
+    }
 
     public function updateStatus(Request $request, $id)
     {

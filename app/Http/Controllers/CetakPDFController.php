@@ -14,6 +14,8 @@ use App\Models\Divisi;
 use App\Models\Department;
 use App\Models\Director;
 use App\Models\User;
+use App\Models\Section;
+use App\Models\Unit;
 use Illuminate\Support\Str;
 use Exception;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +23,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\File;
 use setasign\Fpdi\Fpdi;
 use Illuminate\Support\Facades\Crypt;
+use App\Support\PositionOrder;
 
 class CetakPDFController extends Controller
 {
@@ -380,11 +383,344 @@ class CetakPDFController extends Controller
         }
     }
 
+    private function parseRecipientUserIds(?string $value): array
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        return collect(explode(';', (string) $value))
+            ->map(fn ($id) => trim($id))
+            ->filter(fn ($id) => $id !== '' && is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
+    {
+        $fromRaw = collect(explode(';', (string) $rawValue))
+            ->map(fn ($item) => trim($item))
+            ->filter(fn ($item) => $item !== '' && !is_numeric($item))
+            ->values();
+
+        $fromLegacy = collect(explode(';', (string) $legacyValue))
+            ->map(fn ($item) => trim($item))
+            ->filter(fn ($item) => $item !== '')
+            ->values();
+
+        return $fromRaw
+            ->merge($fromLegacy)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function buildGroupedRecipientDisplayList(array $userIds, array $legacyNames = []): array
+    {
+        if (empty($userIds)) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $selectedUsers = User::with([
+            'position:id_position,nm_position',
+            'department:id_department,name_department',
+        ])
+            ->whereIn('id', $userIds)
+            ->get([
+                'id',
+                'firstname',
+                'lastname',
+                'position_id_position',
+                'director_id_director',
+                'divisi_id_divisi',
+                'department_id_department',
+                'section_id_section',
+                'unit_id_unit',
+            ]);
+
+        if ($selectedUsers->isEmpty()) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $displayList = [];
+
+        $selectedIdSet = $selectedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->flip();
+
+        $remainingIds = $selectedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $directorMap = Director::pluck('name_director', 'id_director');
+        $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
+        $departmentMap = Department::pluck('name_department', 'id_department');
+        $sectionMap = Section::pluck('name_section', 'id_section');
+        $unitMap = Unit::pluck('name_unit', 'id_unit');
+
+        $sectionToDepartmentMap = Section::pluck('department_id_department', 'id_section');
+        $unitToSectionMap = Unit::pluck('section_id_section', 'id_unit');
+
+        $groupedDepartmentIds = [];
+        $groupedSectionIds = [];
+
+        $scopes = [
+            [
+                'col' => 'director_id_director',
+                'label' => 'Direktorat',
+                'map' => $directorMap,
+            ],
+            [
+                'col' => 'divisi_id_divisi',
+                'label' => 'Divisi',
+                'map' => $divisionMap,
+            ],
+            [
+                'col' => 'department_id_department',
+                'label' => 'Departemen',
+                'map' => $departmentMap,
+            ],
+            [
+                'col' => 'section_id_section',
+                'label' => 'Bagian',
+                'map' => $sectionMap,
+            ],
+            [
+                'col' => 'unit_id_unit',
+                'label' => 'Unit',
+                'map' => $unitMap,
+            ],
+        ];
+
+        foreach ($scopes as $scope) {
+            $groupIds = $selectedUsers
+                ->whereIn('id', $remainingIds)
+                ->pluck($scope['col'])
+                ->filter()
+                ->unique()
+                ->values();
+
+            foreach ($groupIds as $groupId) {
+                if ($scope['col'] === 'section_id_section') {
+                    $parentDeptId = $sectionToDepartmentMap[$groupId] ?? null;
+
+                    if (
+                        !empty($parentDeptId) &&
+                        in_array((int) $parentDeptId, $groupedDepartmentIds, true)
+                    ) {
+                        $coveredUserIds = $selectedUsers
+                            ->where('section_id_section', $groupId)
+                            ->pluck('id')
+                            ->map(fn ($id) => (int) $id)
+                            ->all();
+
+                        $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+                        continue;
+                    }
+                }
+
+                if ($scope['col'] === 'unit_id_unit') {
+                    $parentSectionId = $unitToSectionMap[$groupId] ?? null;
+                    $parentDeptId = $parentSectionId
+                        ? ($sectionToDepartmentMap[$parentSectionId] ?? null)
+                        : null;
+
+                    if (
+                        (!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) ||
+                        (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true))
+                    ) {
+                        $coveredUserIds = $selectedUsers
+                            ->where('unit_id_unit', $groupId)
+                            ->pluck('id')
+                            ->map(fn ($id) => (int) $id)
+                            ->all();
+
+                        $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
+                        continue;
+                    }
+                }
+
+                $allMemberIds = User::where($scope['col'], $groupId)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id);
+
+                if ($allMemberIds->isEmpty()) {
+                    continue;
+                }
+
+                $allSelected = $allMemberIds->every(
+                    fn ($memberId) => $selectedIdSet->has((int) $memberId)
+                );
+
+                if ($allSelected) {
+                    $scopeName = $scope['map'][$groupId] ?? 'ID ' . $groupId;
+
+                    $displayList[] = $scope['label'] . ': ' . $scopeName;
+
+                    if ($scope['col'] === 'department_id_department') {
+                        $groupedDepartmentIds[] = (int) $groupId;
+                    }
+
+                    if ($scope['col'] === 'section_id_section') {
+                        $groupedSectionIds[] = (int) $groupId;
+                    }
+
+                    $remainingIds = array_values(array_diff($remainingIds, $allMemberIds->all()));
+                }
+            }
+        }
+
+        $remainingUsers = PositionOrder::sortUsers(
+            $selectedUsers->whereIn('id', $remainingIds)
+        );
+
+        foreach ($remainingUsers as $user) {
+            $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+            $positionName = $user->position->nm_position ?? '-';
+            $positionClean = preg_replace('/^\s*\([^)]*\)\s*/', '', $positionName) ?: $positionName;
+
+            $bagianKerja = $this->getRecipientWorkUnitLabel($user, [
+                'director' => $directorMap,
+                'division' => $divisionMap,
+                'department' => $departmentMap,
+                'section' => $sectionMap,
+                'unit' => $unitMap,
+            ]);
+
+            $displayList[] = $fullName . ' - ' . $bagianKerja . ' (' . $positionClean . ')';
+        }
+
+        return array_values(array_filter(array_merge($displayList, $legacyNames)));
+    }
+
+    private function getRecipientWorkUnitLabel(User $user, array $maps): string
+    {
+        $positionName = $user->position->nm_position ?? '-';
+        $positionLower = strtolower($positionName);
+
+        $isStaff = str_contains($positionLower, 'staff') || str_contains($positionLower, 'staf');
+
+        if ($isStaff) {
+            if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+                return $maps['unit'][$user->unit_id_unit];
+            }
+
+            if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+                return $maps['section'][$user->section_id_section];
+            }
+
+            if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+                return $maps['department'][$user->department_id_department];
+            }
+
+            if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+                return $maps['division'][$user->divisi_id_divisi];
+            }
+
+            if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+                return $maps['director'][$user->director_id_director];
+            }
+
+            return '-';
+        }
+
+        if (!empty($user->department_id_department) && isset($maps['department'][$user->department_id_department])) {
+            return $maps['department'][$user->department_id_department];
+        }
+
+        if (!empty($user->divisi_id_divisi) && isset($maps['division'][$user->divisi_id_divisi])) {
+            return $maps['division'][$user->divisi_id_divisi];
+        }
+
+        if (!empty($user->section_id_section) && isset($maps['section'][$user->section_id_section])) {
+            return $maps['section'][$user->section_id_section];
+        }
+
+        if (!empty($user->unit_id_unit) && isset($maps['unit'][$user->unit_id_unit])) {
+            return $maps['unit'][$user->unit_id_unit];
+        }
+
+        if (!empty($user->director_id_director) && isset($maps['director'][$user->director_id_director])) {
+            return $maps['director'][$user->director_id_director];
+        }
+
+        return '-';
+    }
+    // public function viewmemoPDF($id_memo)
+    // {
+    //     try {
+    //         $memo = Memo::findOrFail($id_memo);
+    //         $tujuanNames = explode(';', (string) $memo->tujuan_string);
+
+    //         $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
+    //             ->first();
+
+    //         if ($manager) {
+    //             $level = $this->detectLevel($manager);
+    //             $manager->level_kerja = $level;
+    //             $manager->bagian_text = $this->getBagianText($manager, $level);
+    //         }
+
+    //         $headerPath = public_path('assets/img/bheader.png');
+    //         $footerPath = public_path('assets/img/bfooter.png');
+    //         $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+    //         $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+    //         $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
+    //             'memo' => $memo,
+    //             'headerImage' => $headerBase64,
+    //             'footerImage' => $footerBase64,
+    //             'tujuanNames' => $tujuanNames,
+    //             'manager' => $manager,
+    //             'isPdf' => true,
+    //             'docStatus' => $memo->status,
+    //         ])->setPaper('A4', 'portrait');
+
+    //         $mainPath = storage_path('app/temp_format_memo_' . $memo->id . '.pdf');
+    //         $formatMemoPdf->save($mainPath);
+
+    //         $attPdfs = $this->createTempPdfsFromAnyMany($memo->lampiran ?? null, $memo->id, 'memo');
+    //         $output = storage_path('app/view_memo_' . $memo->id . '.pdf');
+
+    //         if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
+    //             $this->cleanupTempFiles([$mainPath]);
+    //             return response()
+    //                 ->file($output, ['Content-Type' => 'application/pdf'])
+    //                 ->deleteFileAfterSend(true);
+    //         }
+
+    //         $this->cleanupTempFiles($attPdfs);
+    //         return response()
+    //             ->file($mainPath, ['Content-Type' => 'application/pdf'])
+    //             ->deleteFileAfterSend(true);
+    //     } catch (\Throwable $e) {
+    //         Log::error('Error in viewmemoPDF: ' . $e->getMessage());
+    //         return response()->json(['error' => 'Gagal menampilkan PDF: ' . $e->getMessage()], 500);
+    //     }
+    // }
     public function viewmemoPDF($id_memo)
     {
         try {
             $memo = Memo::findOrFail($id_memo);
-            $tujuanNames = explode(';', (string) $memo->tujuan_string);
+
+            $tujuanUserIds = $this->parseRecipientUserIds($memo->tujuan);
+            $tujuanLegacyNames = empty($tujuanUserIds)
+                ? $this->parseLegacyRecipientNames($memo->tujuan, $memo->tujuan_string)
+                : [];
+            $tujuanList = $this->buildGroupedRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
+            $tujuanTerlampir = count($tujuanList) > 3;
+
+            $tembusanUserIds = $this->parseRecipientUserIds($memo->tembusan);
+            $tembusanLegacyNames = empty($tembusanUserIds)
+                ? $this->parseLegacyRecipientNames($memo->tembusan)
+                : [];
+            $tembusanList = $this->buildGroupedRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
             $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
                 ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
@@ -398,14 +734,22 @@ class CetakPDFController extends Controller
 
             $headerPath = public_path('assets/img/bheader.png');
             $footerPath = public_path('assets/img/bfooter.png');
-            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+            $headerBase64 = file_exists($headerPath)
+                ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
+                : null;
+
+            $footerBase64 = file_exists($footerPath)
+                ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
+                : null;
 
             $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
                 'memo' => $memo,
                 'headerImage' => $headerBase64,
                 'footerImage' => $footerBase64,
-                'tujuanNames' => $tujuanNames,
+                'tujuanList' => $tujuanList,
+                'tembusanList' => $tembusanList,
+                'tujuanTerlampir' => $tujuanTerlampir,
                 'manager' => $manager,
                 'isPdf' => true,
                 'docStatus' => $memo->status,
@@ -419,18 +763,23 @@ class CetakPDFController extends Controller
 
             if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
                 $this->cleanupTempFiles([$mainPath]);
+
                 return response()
                     ->file($output, ['Content-Type' => 'application/pdf'])
                     ->deleteFileAfterSend(true);
             }
 
             $this->cleanupTempFiles($attPdfs);
+
             return response()
                 ->file($mainPath, ['Content-Type' => 'application/pdf'])
                 ->deleteFileAfterSend(true);
         } catch (\Throwable $e) {
             Log::error('Error in viewmemoPDF: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal menampilkan PDF: ' . $e->getMessage()], 500);
+
+            return response()->json([
+                'error' => 'Gagal menampilkan PDF: ' . $e->getMessage(),
+            ], 500);
         }
     }
 
@@ -594,60 +943,51 @@ class CetakPDFController extends Controller
 
             $headerPath = public_path('assets/img/bheader.png');
             $footerPath = public_path('assets/img/bfooter.png');
-            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
 
-            $tujuanIds = explode(';', (string) $undangan->tujuan);
-            $tujuanUsers = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-                ->whereIn('id', $tujuanIds)
-                ->get()
-                ->map(function ($user) {
-                    $level = $this->detectLevel($user);
-                    $user->level_kerja = $level;
-                    $user->bagian_text = $this->getBagianText($user, $level);
+            $headerBase64 = file_exists($headerPath)
+                ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
+                : null;
 
-                    if (isset($user->position->nm_position)) {
-                        $raw = $user->position->nm_position;
-                        $fmt = preg_replace('/\s*\([^)]*\)\s*/', ' ', $raw);
-                        $fmt = trim(preg_replace('/\s+/', ' ', $fmt));
-                        if (!in_array($fmt, ['Staff', 'Direktur'])) {
-                            $abbr = [
-                                'Penanggung Jawab Senior Manager' => 'PJ SM',
-                                'Penanggung Jawab Manager' => 'PJ M',
-                                'Penanggung Jawab Supervisor' => 'PJ SPV',
-                                'Senior Manager' => 'SM',
-                                'General Manager' => 'GM',
-                                'Manager' => 'M',
-                                'Supervisor' => 'SPV',
-                            ];
-                            foreach ($abbr as $full => $a) {
-                                if (strpos($fmt, $full) !== false) {
-                                    $fmt = str_replace($full, $a, $fmt);
-                                    break;
-                                }
-                            }
-                        }
-                        $user->position->nm_position = $fmt;
-                    }
-                    return $user;
-                })
-                ->sortBy(fn($u) => optional($u->position)->id_position)
-                ->values();
+            $footerBase64 = file_exists($footerPath)
+                ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
+                : null;
+
+            $tujuanUserIds = $this->parseRecipientUserIds($undangan->tujuan);
+            $tujuanLegacyNames = empty($tujuanUserIds)
+                ? $this->parseLegacyRecipientNames($undangan->tujuan, $undangan->tujuan_string ?? null)
+                : [];
+
+            $tujuanList = $this->buildIndividualRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
+            $tujuanTerlampir = count($tujuanList) > 1;
+
+            $tembusanUserIds = $this->parseRecipientUserIds($undangan->tembusan ?? null);
+            $tembusanLegacyNames = empty($tembusanUserIds)
+                ? $this->parseLegacyRecipientNames($undangan->tembusan ?? null)
+                : [];
+
+            $tembusanList = $this->buildIndividualRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
             $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
                 ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$undangan->nama_bertandatangan])
                 ->first();
+
             if ($manager) {
                 $level = $this->detectLevel($manager);
                 $manager->level_kerja = $level;
                 $manager->bagian_text = $this->getBagianText($manager, $level);
             }
 
-            $cleanTag = html_entity_decode(strip_tags((string) $undangan->isi_undangan), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $cleanTag = html_entity_decode(
+                strip_tags((string) $undangan->isi_undangan),
+                ENT_QUOTES | ENT_HTML5,
+                'UTF-8'
+            );
 
             $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
                 'undangan' => $undangan,
-                'tujuanUsers' => $tujuanUsers,
+                'tujuanList' => $tujuanList,
+                'tujuanTerlampir' => $tujuanTerlampir,
+                'tembusanList' => $tembusanList,
                 'cleanTag' => $cleanTag,
                 'manager' => $manager,
                 'headerImage' => $headerBase64,
@@ -664,19 +1004,126 @@ class CetakPDFController extends Controller
 
             if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
                 $this->cleanupTempFiles([$mainPath]);
+
                 return response()
                     ->file($output, ['Content-Type' => 'application/pdf'])
                     ->deleteFileAfterSend(true);
             }
 
             $this->cleanupTempFiles($attPdfs);
+
             return response()
                 ->file($mainPath, ['Content-Type' => 'application/pdf'])
                 ->deleteFileAfterSend(true);
         } catch (\Throwable $e) {
-            Log::error('Error in viewundanganPDF: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            Log::error('Error in viewundanganPDF: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json(['error' => 'Gagal menampilkan PDF undangan'], 500);
         }
+    }
+
+    // private function parseRecipientUserIds(?string $value): array
+    // {
+    //     if (empty($value)) {
+    //         return [];
+    //     }
+
+    //     return collect(explode(';', (string) $value))
+    //         ->map(fn ($id) => trim($id))
+    //         ->filter(fn ($id) => $id !== '' && is_numeric($id))
+    //         ->map(fn ($id) => (int) $id)
+    //         ->unique()
+    //         ->values()
+    //         ->all();
+    // }
+
+    // private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
+    // {
+    //     $fromRaw = collect(explode(';', (string) $rawValue))
+    //         ->map(fn ($item) => trim($item))
+    //         ->filter(fn ($item) => $item !== '' && !is_numeric($item))
+    //         ->values();
+
+    //     $fromLegacy = collect(explode(';', (string) $legacyValue))
+    //         ->map(fn ($item) => trim($item))
+    //         ->filter(fn ($item) => $item !== '')
+    //         ->values();
+
+    //     return $fromRaw
+    //         ->merge($fromLegacy)
+    //         ->unique()
+    //         ->values()
+    //         ->all();
+    // }
+
+    private function buildIndividualRecipientDisplayList(array $userIds, array $legacyNames = []): array
+    {
+        if (empty($userIds)) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $users = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+            ->whereIn('id', $userIds)
+            ->get()
+            ->map(function ($user) {
+                $level = $this->detectLevel($user);
+                $user->level_kerja = $level;
+                $user->bagian_text = $this->getBagianText($user, $level);
+
+                if (isset($user->position->nm_position)) {
+                    $user->position->nm_position = $this->formatPositionForPdf($user->position->nm_position);
+                }
+
+                return $user;
+            });
+
+        if ($users->isEmpty()) {
+            return array_values(array_filter($legacyNames));
+        }
+
+        $users = PositionOrder::sortUsers($users);
+
+        return $users
+            ->map(function ($user) {
+                $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+                $positionName = optional($user->position)->nm_position ?? '-';
+                $bagianKerja = $user->bagian_text ?? '-';
+
+                return trim($positionName . ' ' . $bagianKerja . ' (' . $fullName . ')');
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function formatPositionForPdf(string $positionName): string
+    {
+        $formatted = preg_replace('/\s*\([^)]*\)\s*/', ' ', $positionName);
+        $formatted = trim(preg_replace('/\s+/', ' ', $formatted));
+
+        if (in_array($formatted, ['Staff', 'Direktur'], true)) {
+            return $formatted;
+        }
+
+        $abbr = [
+            'Penanggung Jawab Senior Manager' => 'PJ SM',
+            'Penanggung Jawab Manager' => 'PJ M',
+            'Penanggung Jawab Supervisor' => 'PJ SPV',
+            'Senior Manager' => 'SM',
+            'General Manager' => 'GM',
+            'Manager' => 'M',
+            'Supervisor' => 'SPV',
+        ];
+
+        foreach ($abbr as $full => $short) {
+            if (str_contains($formatted, $full)) {
+                return str_replace($full, $short, $formatted);
+            }
+        }
+
+        return $formatted;
     }
 
     public function viewUndanganPdfUrl($id_undangan)
