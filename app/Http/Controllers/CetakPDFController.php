@@ -61,63 +61,52 @@ class CetakPDFController extends Controller
         return true;
     }
 
-    /**
-     * Merge PDF files with error handling - Using available libraries only
-     */
-    // private function mergePDFs($mainPdfPath, $attachmentPath, $outputPath)
-    // {
-    //     // Method 1: Try setasign/fpdi if available (most reliable for PDF merge)
-    //     if (class_exists('\setasign\Fpdi\Fpdi')) {
-    //         try {
-    //             return $this->fpdiMergePDFs($mainPdfPath, $attachmentPath, $outputPath);
-    //         } catch (Exception $e) {
-    //             Log::error('FPDI PDF Merger Error: ' . $e->getMessage());
-    //         }
-    //     }
+    private function buildUndanganPdfData(Undangan $undangan): array
+    {
+        $tujuanUserIds = $this->parseRecipientUserIds($undangan->tujuan);
+        $tujuanLegacyNames = empty($tujuanUserIds) ? $this->parseLegacyRecipientNames($undangan->tujuan, $undangan->tujuan_string ?? null) : [];
 
-    //     // Method 2: Try Webklex PDFMerger with proper constructor
-    //     if (class_exists('Webklex\PDFMerger\PDFMerger')) {
-    //         try {
-    //             // Try with Filesystem instance
-    //             $filesystem = new Filesystem();
-    //             $pdfMerger = new PDFMerger($filesystem);
-    //             $pdfMerger->addPDF($mainPdfPath, 'all');
-    //             $pdfMerger->addPDF($attachmentPath, 'all');
-    //             $pdfMerger->merge('file', $outputPath);
-    //             Log::info('PDF merged successfully using Webklex PDFMerger');
-    //             return true;
-    //         } catch (Exception $e) {
-    //             Log::error('Webklex PDF Merger Error: ' . $e->getMessage());
-    //         }
-    //     }
+        $tujuanList = $this->buildIndividualRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
+        $tujuanTerlampir = count($tujuanList) > 1;
 
-    //     // Method 3: Try mPDF merger if available
-    //     if (class_exists('\Mpdf\Mpdf')) {
-    //         try {
-    //             return $this->mpdfMergePDFs($mainPdfPath, $attachmentPath, $outputPath);
-    //         } catch (Exception $e) {
-    //             Log::error('mPDF Merger Error: ' . $e->getMessage());
-    //         }
-    //     }
+        $tembusanUserIds = $this->parseRecipientUserIds($undangan->tembusan ?? null);
+        $tembusanLegacyNames = empty($tembusanUserIds) ? $this->parseLegacyRecipientNames($undangan->tembusan ?? null) : [];
 
-    //     // Method 4: Create ZIP file with both PDFs
-    //     // try {
-    //     //     $zipPath = $this->createZipWithPDFs($mainPdfPath, $attachmentPath, $outputPath);
-    //     //     if ($zipPath) {
-    //     //         // If ZIP was created, rename it to the expected output path
-    //     //         if (rename($zipPath, $outputPath)) {
-    //     //             Log::info('Created ZIP file as PDF merge alternative');
-    //     //             return true;
-    //     //         }
-    //     //     }
-    //     // } catch (Exception $e) {
-    //     //     Log::error('ZIP creation failed: ' . $e->getMessage());
-    //     // }
+        $tembusanList = $this->buildIndividualRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
-    //     // Method 5: Fallback - just copy main file
-    //     Log::warning('All PDF merger methods failed. Using fallback (main file only)');
-    //     return $this->fallbackMergePDFs($mainPdfPath, $attachmentPath, $outputPath);
-    // }
+        $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+            ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$undangan->nama_bertandatangan])
+            ->first();
+
+        if ($manager) {
+            $level = $this->detectLevel($manager);
+            $manager->level_kerja = $level;
+            $manager->bagian_text = $this->getBagianText($manager, $level);
+        }
+
+        $cleanTag = html_entity_decode(strip_tags((string) $undangan->isi_undangan), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        $headerPath = public_path('assets/img/bheader.png');
+        $footerPath = public_path('assets/img/bfooter.png');
+
+        $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+
+        $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+        return [
+            'undangan' => $undangan,
+            'tujuanList' => $tujuanList,
+            'tujuanTerlampir' => $tujuanTerlampir,
+            'tembusanList' => $tembusanList,
+            'cleanTag' => $cleanTag,
+            'manager' => $manager,
+            'headerImage' => $headerBase64,
+            'footerImage' => $footerBase64,
+            'isPdf' => true,
+            'docStatus' => $undangan->status,
+        ];
+    }
+
     private function mergePDFs($mainPdfPath, $attachmentPath, $outputPath)
     {
         // Pakai FPDI saja (paling stabil untuk beda ukuran halaman)
@@ -130,41 +119,6 @@ class CetakPDFController extends Controller
         return $this->fallbackMergePDFs($mainPdfPath, $attachmentPath, $outputPath);
     }
 
-    /**
-     * FPDI-based PDF merger (most reliable if available)
-     */
-    // private function fpdiMergePDFs($mainPdfPath, $attachmentPath, $outputPath)
-    // {
-    //     try {
-    //         $pdf = new \setasign\Fpdi\Fpdi();
-
-    //         // Import main PDF
-    //         $pageCount = $pdf->setSourceFile($mainPdfPath);
-    //         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-    //             $templateId = $pdf->importPage($pageNo);
-    //             $tplSize = $pdf->getTemplateSize($templateId);
-    //             $orientation = ($tplSize['width'] > $tplSize['height']) ? 'L' : 'P';
-    //             $pdf->AddPage($orientation, [$tplSize['width'], $tplSize['height']]);
-    //             $pdf->useTemplate($templateId, 0, 0, $tplSize['width'], $tplSize['height']);
-    //         }
-
-    //         // Import attachment PDF
-    //         $pageCount = $pdf->setSourceFile($attachmentPath);
-    //         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-    //             $templateId = $pdf->importPage($pageNo);
-    //             $tplSize = $pdf->getTemplateSize($templateId);
-    //             $orientation = ($tplSize['width'] > $tplSize['height']) ? 'L' : 'P';
-    //             $pdf->AddPage($orientation, [$tplSize['width'], $tplSize['height']]);
-    //             $pdf->useTemplate($templateId, 0, 0, $tplSize['width'], $tplSize['height']);
-    //         }
-
-    //         $pdf->Output('F', $outputPath);
-    //         return true;
-    //     } catch (Exception $e) {
-    //         Log::error('FPDI merge error: ' . $e->getMessage());
-    //         return false;
-    //     }
-    // }
     private function fpdiMergePDFs($mainPdfPath, $attachmentPath, $outputPath)
     {
         try {
@@ -331,57 +285,145 @@ class CetakPDFController extends Controller
         return $tempPath;
     }
 
+    private function buildMemoPdfData(Memo $memo): array
+    {
+        $tujuanUserIds = $this->parseRecipientUserIds($memo->tujuan);
+        $tujuanLegacyNames = empty($tujuanUserIds) ? $this->parseLegacyRecipientNames($memo->tujuan, $memo->tujuan_string ?? null) : [];
+
+        $tujuanList = $this->buildGroupedRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
+        $tujuanTerlampir = count($tujuanList) > 3;
+
+        $tembusanUserIds = $this->parseRecipientUserIds($memo->tembusan ?? null);
+        $tembusanLegacyNames = empty($tembusanUserIds) ? $this->parseLegacyRecipientNames($memo->tembusan ?? null) : [];
+
+        $tembusanList = $this->buildGroupedRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
+
+        $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+            ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
+            ->first();
+
+        if ($manager) {
+            $level = $this->detectLevel($manager);
+            $manager->level_kerja = $level;
+            $manager->bagian_text = $this->getBagianText($manager, $level);
+        }
+
+        $headerPath = public_path('assets/img/bheader.png');
+        $footerPath = public_path('assets/img/bfooter.png');
+
+        $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+
+        $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+        return [
+            'memo' => $memo,
+            'headerImage' => $headerBase64,
+            'footerImage' => $footerBase64,
+            'tujuanList' => $tujuanList,
+            'tembusanList' => $tembusanList,
+            'tujuanTerlampir' => $tujuanTerlampir,
+            'manager' => $manager,
+            'qrCode' => $memo->qr_approved_by,
+            'isPdf' => true,
+            'docStatus' => $memo->status,
+        ];
+    }
+
     public function cetakmemoPDF($id)
     {
         try {
             $memo = Memo::findOrFail($id);
-            $tujuanNames = explode(';', (string) $memo->tujuan_string);
 
-            $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-                ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
-                ->first();
+            $pdfData = $this->buildMemoPdfData($memo);
 
-            if ($manager) {
-                $level = $this->detectLevel($manager);
-                $manager->level_kerja = $level;
-                $manager->bagian_text = $this->getBagianText($manager, $level);
-            }
+            $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', $pdfData)->setPaper('A4', 'portrait');
 
-            $headerPath = public_path('assets/img/bheader.png');
-            $footerPath = public_path('assets/img/bfooter.png');
-            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+            $memoId = $memo->id_memo;
 
-            $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
-                'memo' => $memo,
-                'headerImage' => $headerBase64,
-                'footerImage' => $footerBase64,
-                'tujuanNames' => $tujuanNames,
-                'manager' => $manager,
-                'qrCode' => $memo->qr_approved_by,
-                'isPdf' => true,
-                'docStatus' => $memo->status,
-            ])->setPaper('A4', 'portrait');
-
-            $mainPath = storage_path('app/temp_format_memo_' . $memo->id . '.pdf');
+            $mainPath = storage_path('app/temp_format_memo_' . $memoId . '.pdf');
             $formatMemoPdf->save($mainPath);
 
-            $attPdfs = $this->createTempPdfsFromAnyMany($memo->lampiran ?? null, $memo->id, 'memo');
-            $output = storage_path('app/merged_memo_' . $memo->id . '.pdf');
+            $attPdfs = $this->createTempPdfsFromAnyMany($memo->lampiran ?? null, $memoId, 'memo');
+            $output = storage_path('app/merged_memo_' . $memoId . '.pdf');
 
-            $fileName = Str::slug($memo->judul) . '-' . $memo->id . '.pdf';
+            $fileName = Str::slug($memo->judul ?: 'memo') . '-' . $memoId . '.pdf';
+
             if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
                 $this->cleanupTempFiles([$mainPath]);
-                return response()->download($output, $fileName)->deleteFileAfterSend(true);
+
+                return response()
+                    ->download($output, $fileName, [
+                        'Content-Type' => 'application/pdf',
+                    ])
+                    ->deleteFileAfterSend(true);
             }
 
             $this->cleanupTempFiles($attPdfs);
-            return response()->download($mainPath, $fileName)->deleteFileAfterSend(true);
+
+            return response()
+                ->download($mainPath, $fileName, [
+                    'Content-Type' => 'application/pdf',
+                ])
+                ->deleteFileAfterSend(true);
         } catch (\Throwable $e) {
-            Log::error('Error in cetakmemoPDF: ' . $e->getMessage());
+            Log::error('Error in cetakmemoPDF: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json(['error' => 'Gagal membuat PDF'], 500);
         }
     }
+    // public function cetakmemoPDF($id)
+    // {
+    //     try {
+    //         $memo = Memo::findOrFail($id);
+    //         $tujuanNames = explode(';', (string) $memo->tujuan_string);
+
+    //         $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
+    //             ->first();
+
+    //         if ($manager) {
+    //             $level = $this->detectLevel($manager);
+    //             $manager->level_kerja = $level;
+    //             $manager->bagian_text = $this->getBagianText($manager, $level);
+    //         }
+
+    //         $headerPath = public_path('assets/img/bheader.png');
+    //         $footerPath = public_path('assets/img/bfooter.png');
+    //         $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+    //         $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+    //         $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
+    //             'memo' => $memo,
+    //             'headerImage' => $headerBase64,
+    //             'footerImage' => $footerBase64,
+    //             'tujuanNames' => $tujuanNames,
+    //             'manager' => $manager,
+    //             'qrCode' => $memo->qr_approved_by,
+    //             'isPdf' => true,
+    //             'docStatus' => $memo->status,
+    //         ])->setPaper('A4', 'portrait');
+
+    //         $mainPath = storage_path('app/temp_format_memo_' . $memo->id . '.pdf');
+    //         $formatMemoPdf->save($mainPath);
+
+    //         $attPdfs = $this->createTempPdfsFromAnyMany($memo->lampiran ?? null, $memo->id, 'memo');
+    //         $output = storage_path('app/merged_memo_' . $memo->id . '.pdf');
+
+    //         $fileName = Str::slug($memo->judul) . '-' . $memo->id . '.pdf';
+    //         if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
+    //             $this->cleanupTempFiles([$mainPath]);
+    //             return response()->download($output, $fileName)->deleteFileAfterSend(true);
+    //         }
+
+    //         $this->cleanupTempFiles($attPdfs);
+    //         return response()->download($mainPath, $fileName)->deleteFileAfterSend(true);
+    //     } catch (\Throwable $e) {
+    //         Log::error('Error in cetakmemoPDF: ' . $e->getMessage());
+    //         return response()->json(['error' => 'Gagal membuat PDF'], 500);
+    //     }
+    // }
 
     private function parseRecipientUserIds(?string $value): array
     {
@@ -389,32 +431,16 @@ class CetakPDFController extends Controller
             return [];
         }
 
-        return collect(explode(';', (string) $value))
-            ->map(fn ($id) => trim($id))
-            ->filter(fn ($id) => $id !== '' && is_numeric($id))
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
+        return collect(explode(';', (string) $value))->map(fn($id) => trim($id))->filter(fn($id) => $id !== '' && is_numeric($id))->map(fn($id) => (int) $id)->unique()->values()->all();
     }
 
     private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
     {
-        $fromRaw = collect(explode(';', (string) $rawValue))
-            ->map(fn ($item) => trim($item))
-            ->filter(fn ($item) => $item !== '' && !is_numeric($item))
-            ->values();
+        $fromRaw = collect(explode(';', (string) $rawValue))->map(fn($item) => trim($item))->filter(fn($item) => $item !== '' && !is_numeric($item))->values();
 
-        $fromLegacy = collect(explode(';', (string) $legacyValue))
-            ->map(fn ($item) => trim($item))
-            ->filter(fn ($item) => $item !== '')
-            ->values();
+        $fromLegacy = collect(explode(';', (string) $legacyValue))->map(fn($item) => trim($item))->filter(fn($item) => $item !== '')->values();
 
-        return $fromRaw
-            ->merge($fromLegacy)
-            ->unique()
-            ->values()
-            ->all();
+        return $fromRaw->merge($fromLegacy)->unique()->values()->all();
     }
 
     private function buildGroupedRecipientDisplayList(array $userIds, array $legacyNames = []): array
@@ -423,22 +449,9 @@ class CetakPDFController extends Controller
             return array_values(array_filter($legacyNames));
         }
 
-        $selectedUsers = User::with([
-            'position:id_position,nm_position',
-            'department:id_department,name_department',
-        ])
+        $selectedUsers = User::with(['position:id_position,nm_position', 'department:id_department,name_department'])
             ->whereIn('id', $userIds)
-            ->get([
-                'id',
-                'firstname',
-                'lastname',
-                'position_id_position',
-                'director_id_director',
-                'divisi_id_divisi',
-                'department_id_department',
-                'section_id_section',
-                'unit_id_unit',
-            ]);
+            ->get(['id', 'firstname', 'lastname', 'position_id_position', 'director_id_director', 'divisi_id_divisi', 'department_id_department', 'section_id_section', 'unit_id_unit']);
 
         if ($selectedUsers->isEmpty()) {
             return array_values(array_filter($legacyNames));
@@ -446,16 +459,9 @@ class CetakPDFController extends Controller
 
         $displayList = [];
 
-        $selectedIdSet = $selectedUsers
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->flip();
+        $selectedIdSet = $selectedUsers->pluck('id')->map(fn($id) => (int) $id)->flip();
 
-        $remainingIds = $selectedUsers
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values()
-            ->all();
+        $remainingIds = $selectedUsers->pluck('id')->map(fn($id) => (int) $id)->values()->all();
 
         $directorMap = Director::pluck('name_director', 'id_director');
         $divisionMap = Divisi::pluck('nm_divisi', 'id_divisi');
@@ -498,26 +504,14 @@ class CetakPDFController extends Controller
         ];
 
         foreach ($scopes as $scope) {
-            $groupIds = $selectedUsers
-                ->whereIn('id', $remainingIds)
-                ->pluck($scope['col'])
-                ->filter()
-                ->unique()
-                ->values();
+            $groupIds = $selectedUsers->whereIn('id', $remainingIds)->pluck($scope['col'])->filter()->unique()->values();
 
             foreach ($groupIds as $groupId) {
                 if ($scope['col'] === 'section_id_section') {
                     $parentDeptId = $sectionToDepartmentMap[$groupId] ?? null;
 
-                    if (
-                        !empty($parentDeptId) &&
-                        in_array((int) $parentDeptId, $groupedDepartmentIds, true)
-                    ) {
-                        $coveredUserIds = $selectedUsers
-                            ->where('section_id_section', $groupId)
-                            ->pluck('id')
-                            ->map(fn ($id) => (int) $id)
-                            ->all();
+                    if (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true)) {
+                        $coveredUserIds = $selectedUsers->where('section_id_section', $groupId)->pluck('id')->map(fn($id) => (int) $id)->all();
 
                         $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
                         continue;
@@ -526,36 +520,23 @@ class CetakPDFController extends Controller
 
                 if ($scope['col'] === 'unit_id_unit') {
                     $parentSectionId = $unitToSectionMap[$groupId] ?? null;
-                    $parentDeptId = $parentSectionId
-                        ? ($sectionToDepartmentMap[$parentSectionId] ?? null)
-                        : null;
+                    $parentDeptId = $parentSectionId ? $sectionToDepartmentMap[$parentSectionId] ?? null : null;
 
-                    if (
-                        (!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) ||
-                        (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true))
-                    ) {
-                        $coveredUserIds = $selectedUsers
-                            ->where('unit_id_unit', $groupId)
-                            ->pluck('id')
-                            ->map(fn ($id) => (int) $id)
-                            ->all();
+                    if ((!empty($parentSectionId) && in_array((int) $parentSectionId, $groupedSectionIds, true)) || (!empty($parentDeptId) && in_array((int) $parentDeptId, $groupedDepartmentIds, true))) {
+                        $coveredUserIds = $selectedUsers->where('unit_id_unit', $groupId)->pluck('id')->map(fn($id) => (int) $id)->all();
 
                         $remainingIds = array_values(array_diff($remainingIds, $coveredUserIds));
                         continue;
                     }
                 }
 
-                $allMemberIds = User::where($scope['col'], $groupId)
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id);
+                $allMemberIds = User::where($scope['col'], $groupId)->pluck('id')->map(fn($id) => (int) $id);
 
                 if ($allMemberIds->isEmpty()) {
                     continue;
                 }
 
-                $allSelected = $allMemberIds->every(
-                    fn ($memberId) => $selectedIdSet->has((int) $memberId)
-                );
+                $allSelected = $allMemberIds->every(fn($memberId) => $selectedIdSet->has((int) $memberId));
 
                 if ($allSelected) {
                     $scopeName = $scope['map'][$groupId] ?? 'ID ' . $groupId;
@@ -575,9 +556,7 @@ class CetakPDFController extends Controller
             }
         }
 
-        $remainingUsers = PositionOrder::sortUsers(
-            $selectedUsers->whereIn('id', $remainingIds)
-        );
+        $remainingUsers = PositionOrder::sortUsers($selectedUsers->whereIn('id', $remainingIds));
 
         foreach ($remainingUsers as $user) {
             $fullName = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
@@ -710,16 +689,12 @@ class CetakPDFController extends Controller
             $memo = Memo::findOrFail($id_memo);
 
             $tujuanUserIds = $this->parseRecipientUserIds($memo->tujuan);
-            $tujuanLegacyNames = empty($tujuanUserIds)
-                ? $this->parseLegacyRecipientNames($memo->tujuan, $memo->tujuan_string)
-                : [];
+            $tujuanLegacyNames = empty($tujuanUserIds) ? $this->parseLegacyRecipientNames($memo->tujuan, $memo->tujuan_string) : [];
             $tujuanList = $this->buildGroupedRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
             $tujuanTerlampir = count($tujuanList) > 3;
 
             $tembusanUserIds = $this->parseRecipientUserIds($memo->tembusan);
-            $tembusanLegacyNames = empty($tembusanUserIds)
-                ? $this->parseLegacyRecipientNames($memo->tembusan)
-                : [];
+            $tembusanLegacyNames = empty($tembusanUserIds) ? $this->parseLegacyRecipientNames($memo->tembusan) : [];
             $tembusanList = $this->buildGroupedRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
             $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
@@ -735,13 +710,9 @@ class CetakPDFController extends Controller
             $headerPath = public_path('assets/img/bheader.png');
             $footerPath = public_path('assets/img/bfooter.png');
 
-            $headerBase64 = file_exists($headerPath)
-                ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
-                : null;
+            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
 
-            $footerBase64 = file_exists($footerPath)
-                ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
-                : null;
+            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
 
             $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
                 'memo' => $memo,
@@ -777,9 +748,12 @@ class CetakPDFController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error in viewmemoPDF: ' . $e->getMessage());
 
-            return response()->json([
-                'error' => 'Gagal menampilkan PDF: ' . $e->getMessage(),
-            ], 500);
+            return response()->json(
+                [
+                    'error' => 'Gagal menampilkan PDF: ' . $e->getMessage(),
+                ],
+                500,
+            );
         }
     }
 
@@ -800,10 +774,13 @@ class CetakPDFController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error in viewMemoPdfUrl: ' . $e->getMessage());
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Gagal mengambil URL PDF memo',
-            ], 500);
+            return response()->json(
+                [
+                    'status' => 'error',
+                    'message' => 'Gagal mengambil URL PDF memo',
+                ],
+                500,
+            );
         }
     }
 
@@ -837,66 +814,115 @@ class CetakPDFController extends Controller
         try {
             $undangan = Undangan::findOrFail($id);
 
-            $headerPath = public_path('assets/img/bheader.png');
-            $footerPath = public_path('assets/img/bfooter.png');
-            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+            $pdfData = $this->buildUndanganPdfData($undangan);
 
-            $tujuanIds = explode(';', (string) $undangan->tujuan);
-            $tujuanUsers = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-                ->whereIn('id', $tujuanIds)
-                ->get()
-                ->map(function ($user) {
-                    $level = $this->detectLevel($user);
-                    $user->level_kerja = $level;
-                    $user->bagian_text = $this->getBagianText($user, $level);
-                    return $user;
-                })
-                ->sortBy(fn($u) => optional($u->position)->id_position)
-                ->values();
+            $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', $pdfData)->setPaper('A4', 'portrait');
 
-            $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-                ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$undangan->nama_bertandatangan])
-                ->first();
-            if ($manager) {
-                $level = $this->detectLevel($manager);
-                $manager->level_kerja = $level;
-                $manager->bagian_text = $this->getBagianText($manager, $level);
-            }
+            $undanganId = $undangan->id_undangan;
 
-            $cleanTag = html_entity_decode(strip_tags((string) $undangan->isi_undangan), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-            $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
-                'undangan' => $undangan,
-                'tujuanUsers' => $tujuanUsers,
-                'cleanTag' => $cleanTag,
-                'manager' => $manager,
-                'headerImage' => $headerBase64,
-                'footerImage' => $footerBase64,
-                'isPdf' => true,
-                'docStatus' => $undangan->status,
-            ])->setPaper('A4', 'portrait');
-
-            $mainPath = storage_path('app/temp_format_undangan_' . $undangan->id . '.pdf');
+            $mainPath = storage_path('app/temp_format_undangan_' . $undanganId . '.pdf');
             $formatUndanganPdf->save($mainPath);
 
-            $attPdfs = $this->createTempPdfsFromAnyMany($undangan->lampiran ?? null, $undangan->id, 'undangan');
-            $output = storage_path('app/cetak_undangan_' . $undangan->id . '.pdf');
+            $attPdfs = $this->createTempPdfsFromAnyMany($undangan->lampiran ?? null, $undanganId, 'undangan');
+            $output = storage_path('app/cetak_undangan_' . $undanganId . '.pdf');
 
-            $fileName = $this->sanitizeFileName($undangan->judul) . ' - ' . $undangan->id . '.pdf';
+            $fileName = $this->sanitizeFileName($undangan->judul ?: 'Undangan') . ' - ' . $undanganId . '.pdf';
 
             if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
                 $this->cleanupTempFiles([$mainPath]);
-                return response()->download($output, $fileName)->deleteFileAfterSend(true);
+
+                return response()
+                    ->download($output, $fileName, [
+                        'Content-Type' => 'application/pdf',
+                    ])
+                    ->deleteFileAfterSend(true);
             }
 
             $this->cleanupTempFiles($attPdfs);
-            return response()->download($mainPath, $fileName)->deleteFileAfterSend(true);
+
+            return response()
+                ->download($mainPath, $fileName, [
+                    'Content-Type' => 'application/pdf',
+                ])
+                ->deleteFileAfterSend(true);
         } catch (\Throwable $e) {
-            Log::error('Error in cetakundanganPDF: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal membuat PDF undangan'], 500);
+            Log::error('Error in cetakundanganPDF: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json(
+                [
+                    'error' => 'Gagal membuat PDF undangan',
+                ],
+                500,
+            );
         }
     }
+    // public function cetakundanganPDF($id)
+    // {
+    //     try {
+    //         $undangan = Undangan::findOrFail($id);
+
+    //         $headerPath = public_path('assets/img/bheader.png');
+    //         $footerPath = public_path('assets/img/bfooter.png');
+    //         $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+    //         $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+    //         $tujuanIds = explode(';', (string) $undangan->tujuan);
+    //         $tujuanUsers = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //             ->whereIn('id', $tujuanIds)
+    //             ->get()
+    //             ->map(function ($user) {
+    //                 $level = $this->detectLevel($user);
+    //                 $user->level_kerja = $level;
+    //                 $user->bagian_text = $this->getBagianText($user, $level);
+    //                 return $user;
+    //             })
+    //             ->sortBy(fn($u) => optional($u->position)->id_position)
+    //             ->values();
+
+    //         $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$undangan->nama_bertandatangan])
+    //             ->first();
+    //         if ($manager) {
+    //             $level = $this->detectLevel($manager);
+    //             $manager->level_kerja = $level;
+    //             $manager->bagian_text = $this->getBagianText($manager, $level);
+    //         }
+
+    //         $cleanTag = html_entity_decode(strip_tags((string) $undangan->isi_undangan), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+    //         $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
+    //             'undangan' => $undangan,
+    //             'tujuanUsers' => $tujuanUsers,
+    //             'cleanTag' => $cleanTag,
+    //             'manager' => $manager,
+    //             'headerImage' => $headerBase64,
+    //             'footerImage' => $footerBase64,
+    //             'isPdf' => true,
+    //             'docStatus' => $undangan->status,
+    //         ])->setPaper('A4', 'portrait');
+
+    //         $mainPath = storage_path('app/temp_format_undangan_' . $undangan->id . '.pdf');
+    //         $formatUndanganPdf->save($mainPath);
+
+    //         $attPdfs = $this->createTempPdfsFromAnyMany($undangan->lampiran ?? null, $undangan->id, 'undangan');
+    //         $output = storage_path('app/cetak_undangan_' . $undangan->id . '.pdf');
+
+    //         $fileName = $this->sanitizeFileName($undangan->judul) . ' - ' . $undangan->id . '.pdf';
+
+    //         if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
+    //             $this->cleanupTempFiles([$mainPath]);
+    //             return response()->download($output, $fileName)->deleteFileAfterSend(true);
+    //         }
+
+    //         $this->cleanupTempFiles($attPdfs);
+    //         return response()->download($mainPath, $fileName)->deleteFileAfterSend(true);
+    //     } catch (\Throwable $e) {
+    //         Log::error('Error in cetakundanganPDF: ' . $e->getMessage());
+    //         return response()->json(['error' => 'Gagal membuat PDF undangan'], 500);
+    //     }
+    // }
 
     public function detectLevel($user)
     {
@@ -944,26 +970,18 @@ class CetakPDFController extends Controller
             $headerPath = public_path('assets/img/bheader.png');
             $footerPath = public_path('assets/img/bfooter.png');
 
-            $headerBase64 = file_exists($headerPath)
-                ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
-                : null;
+            $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
 
-            $footerBase64 = file_exists($footerPath)
-                ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
-                : null;
+            $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
 
             $tujuanUserIds = $this->parseRecipientUserIds($undangan->tujuan);
-            $tujuanLegacyNames = empty($tujuanUserIds)
-                ? $this->parseLegacyRecipientNames($undangan->tujuan, $undangan->tujuan_string ?? null)
-                : [];
+            $tujuanLegacyNames = empty($tujuanUserIds) ? $this->parseLegacyRecipientNames($undangan->tujuan, $undangan->tujuan_string ?? null) : [];
 
             $tujuanList = $this->buildIndividualRecipientDisplayList($tujuanUserIds, $tujuanLegacyNames);
             $tujuanTerlampir = count($tujuanList) > 1;
 
             $tembusanUserIds = $this->parseRecipientUserIds($undangan->tembusan ?? null);
-            $tembusanLegacyNames = empty($tembusanUserIds)
-                ? $this->parseLegacyRecipientNames($undangan->tembusan ?? null)
-                : [];
+            $tembusanLegacyNames = empty($tembusanUserIds) ? $this->parseLegacyRecipientNames($undangan->tembusan ?? null) : [];
 
             $tembusanList = $this->buildIndividualRecipientDisplayList($tembusanUserIds, $tembusanLegacyNames);
 
@@ -977,24 +995,23 @@ class CetakPDFController extends Controller
                 $manager->bagian_text = $this->getBagianText($manager, $level);
             }
 
-            $cleanTag = html_entity_decode(
-                strip_tags((string) $undangan->isi_undangan),
-                ENT_QUOTES | ENT_HTML5,
-                'UTF-8'
-            );
+            $cleanTag = html_entity_decode(strip_tags((string) $undangan->isi_undangan), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-            $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
-                'undangan' => $undangan,
-                'tujuanList' => $tujuanList,
-                'tujuanTerlampir' => $tujuanTerlampir,
-                'tembusanList' => $tembusanList,
-                'cleanTag' => $cleanTag,
-                'manager' => $manager,
-                'headerImage' => $headerBase64,
-                'footerImage' => $footerBase64,
-                'isPdf' => true,
-                'docStatus' => $undangan->status,
-            ])->setPaper('A4', 'portrait');
+            // $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
+            //     'undangan' => $undangan,
+            //     'tujuanList' => $tujuanList,
+            //     'tujuanTerlampir' => $tujuanTerlampir,
+            //     'tembusanList' => $tembusanList,
+            //     'cleanTag' => $cleanTag,
+            //     'manager' => $manager,
+            //     'headerImage' => $headerBase64,
+            //     'footerImage' => $footerBase64,
+            //     'isPdf' => true,
+            //     'docStatus' => $undangan->status,
+            // ])->setPaper('A4', 'portrait');
+            $pdfData = $this->buildUndanganPdfData($undangan);
+
+            $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', $pdfData)->setPaper('A4', 'portrait');
 
             $mainPath = storage_path('app/temp_format_undangan_' . $undangan->id . '.pdf');
             $formatUndanganPdf->save($mainPath);
@@ -1023,40 +1040,6 @@ class CetakPDFController extends Controller
             return response()->json(['error' => 'Gagal menampilkan PDF undangan'], 500);
         }
     }
-
-    // private function parseRecipientUserIds(?string $value): array
-    // {
-    //     if (empty($value)) {
-    //         return [];
-    //     }
-
-    //     return collect(explode(';', (string) $value))
-    //         ->map(fn ($id) => trim($id))
-    //         ->filter(fn ($id) => $id !== '' && is_numeric($id))
-    //         ->map(fn ($id) => (int) $id)
-    //         ->unique()
-    //         ->values()
-    //         ->all();
-    // }
-
-    // private function parseLegacyRecipientNames(?string $rawValue, ?string $legacyValue = null): array
-    // {
-    //     $fromRaw = collect(explode(';', (string) $rawValue))
-    //         ->map(fn ($item) => trim($item))
-    //         ->filter(fn ($item) => $item !== '' && !is_numeric($item))
-    //         ->values();
-
-    //     $fromLegacy = collect(explode(';', (string) $legacyValue))
-    //         ->map(fn ($item) => trim($item))
-    //         ->filter(fn ($item) => $item !== '')
-    //         ->values();
-
-    //     return $fromRaw
-    //         ->merge($fromLegacy)
-    //         ->unique()
-    //         ->values()
-    //         ->all();
-    // }
 
     private function buildIndividualRecipientDisplayList(array $userIds, array $legacyNames = []): array
     {
@@ -1143,10 +1126,13 @@ class CetakPDFController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error in viewUndanganPdfUrl: ' . $e->getMessage());
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Gagal mengambil URL PDF undangan',
-            ], 500);
+            return response()->json(
+                [
+                    'status' => 'error',
+                    'message' => 'Gagal mengambil URL PDF undangan',
+                ],
+                500,
+            );
         }
     }
 
@@ -1459,13 +1445,15 @@ class CetakPDFController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error in viewRisalahPdfUrl: ' . $e->getMessage());
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Gagal mengambil URL PDF risalah',
-            ], 500);
+            return response()->json(
+                [
+                    'status' => 'error',
+                    'message' => 'Gagal mengambil URL PDF risalah',
+                ],
+                500,
+            );
         }
     }
-
 
     public function viewRisalahPdfMobile($token)
     {
@@ -1494,85 +1482,124 @@ class CetakPDFController extends Controller
     }
 
     // View PDF Memo dengan URL untuk diakses langsung tanpa download
-    private function generateMemoPdfFile($id_memo)
-    {
-        $memo = Memo::findOrFail($id_memo);
+    // private function generateMemoPdfFile($id_memo)
+    // {
+    //     $memo = Memo::findOrFail($id_memo);
 
-        $tujuanNames = explode(';', (string) $memo->tujuan_string);
+    //     $tujuanNames = explode(';', (string) $memo->tujuan_string);
 
-        $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-            ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
-            ->first();
+    //     $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //         ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$memo->nama_bertandatangan])
+    //         ->first();
 
-        if ($manager) {
-            $level = $this->detectLevel($manager);
-            $manager->level_kerja = $level;
-            $manager->bagian_text = $this->getBagianText($manager, $level);
-        }
+    //     if ($manager) {
+    //         $level = $this->detectLevel($manager);
+    //         $manager->level_kerja = $level;
+    //         $manager->bagian_text = $this->getBagianText($manager, $level);
+    //     }
 
-        $headerPath = public_path('assets/img/bheader.png');
-        $footerPath = public_path('assets/img/bfooter.png');
+    //     $headerPath = public_path('assets/img/bheader.png');
+    //     $footerPath = public_path('assets/img/bfooter.png');
 
-        $headerBase64 = file_exists($headerPath)
-            ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
-            : null;
+    //     $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
 
-        $footerBase64 = file_exists($footerPath)
-            ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
-            : null;
+    //     $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
 
-        $cleanIsi = html_entity_decode(
-            strip_tags((string) ($memo->isi_memo ?? $memo->isi ?? '')),
-            ENT_QUOTES | ENT_HTML5,
-            'UTF-8'
-        );
+    //     $cleanIsi = html_entity_decode(strip_tags((string) ($memo->isi_memo ?? ($memo->isi ?? ''))), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-        $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
-            'memo' => $memo,
-            'tujuanNames' => $tujuanNames,
-            'manager' => $manager,
-            'cleanIsi' => $cleanIsi,
-            'qrCode' => $memo->qr_approved_by,
-            'headerImage' => $headerBase64,
-            'footerImage' => $footerBase64,
-            'isPdf' => true,
-            'docStatus' => $memo->status,
-        ])->setPaper('A4', 'portrait');
+    //     $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', [
+    //         'memo' => $memo,
+    //         'tujuanNames' => $tujuanNames,
+    //         'manager' => $manager,
+    //         'cleanIsi' => $cleanIsi,
+    //         'qrCode' => $memo->qr_approved_by,
+    //         'headerImage' => $headerBase64,
+    //         'footerImage' => $footerBase64,
+    //         'isPdf' => true,
+    //         'docStatus' => $memo->status,
+    //     ])->setPaper('A4', 'portrait');
 
-        $tempMainPath = storage_path('app/temp_format_memo_mobile_' . $memo->id_memo . '.pdf');
-        $formatMemoPdf->save($tempMainPath);
+    //     $tempMainPath = storage_path('app/temp_format_memo_mobile_' . $memo->id_memo . '.pdf');
+    //     $formatMemoPdf->save($tempMainPath);
 
-        $attPdfs = $this->createTempPdfsFromAnyMany(
-            $memo->lampiran ?? null,
-            $memo->id_memo,
-            'memo_mobile'
-        );
+    //     $attPdfs = $this->createTempPdfsFromAnyMany($memo->lampiran ?? null, $memo->id_memo, 'memo_mobile');
 
-        $finalFileName = $this->sanitizeFileName($memo->judul) . ' - ' . $memo->id_memo . '.pdf';
+    //     $finalFileName = $this->sanitizeFileName($memo->judul) . ' - ' . $memo->id_memo . '.pdf';
 
-        $finalPath = storage_path('app/private_pdf/' . $finalFileName);
+    //     $finalPath = storage_path('app/private_pdf/' . $finalFileName);
 
-        if (!file_exists(dirname($finalPath))) {
-            mkdir(dirname($finalPath), 0755, true);
-        }
+    //     if (!file_exists(dirname($finalPath))) {
+    //         mkdir(dirname($finalPath), 0755, true);
+    //     }
 
-        if (!empty($attPdfs)) {
-            if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
-                $this->cleanupTempFiles([$tempMainPath]);
-            } else {
-                rename($tempMainPath, $finalPath);
-                $this->cleanupTempFiles($attPdfs);
-            }
+    //     if (!empty($attPdfs)) {
+    //         if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
+    //             $this->cleanupTempFiles([$tempMainPath]);
+    //         } else {
+    //             rename($tempMainPath, $finalPath);
+    //             $this->cleanupTempFiles($attPdfs);
+    //         }
+    //     } else {
+    //         rename($tempMainPath, $finalPath);
+    //     }
+
+    //     return [
+    //         'memo' => $memo,
+    //         'file_name' => $finalFileName,
+    //         'file_path' => $finalPath,
+    //     ];
+    // }
+private function generateMemoPdfFile($id_memo)
+{
+    $memo = Memo::findOrFail($id_memo);
+
+    $pdfData = $this->buildMemoPdfData($memo);
+
+    $cleanIsi = html_entity_decode(
+        strip_tags((string) ($memo->isi_memo ?? ($memo->isi ?? ''))),
+        ENT_QUOTES | ENT_HTML5,
+        'UTF-8'
+    );
+
+    $pdfData['cleanIsi'] = $cleanIsi;
+    $pdfData['qrCode'] = $memo->qr_approved_by;
+
+    $formatMemoPdf = $this->loadPdfView('format-surat.format-memo', $pdfData)
+        ->setPaper('A4', 'portrait');
+
+    $tempMainPath = storage_path('app/temp_format_memo_mobile_' . $memo->id_memo . '.pdf');
+    $formatMemoPdf->save($tempMainPath);
+
+    $attPdfs = $this->createTempPdfsFromAnyMany(
+        $memo->lampiran ?? null,
+        $memo->id_memo,
+        'memo_mobile'
+    );
+
+    $finalFileName = $this->sanitizeFileName($memo->judul ?: 'Memo') . ' - ' . $memo->id_memo . '.pdf';
+    $finalPath = storage_path('app/private_pdf/' . $finalFileName);
+
+    if (!file_exists(dirname($finalPath))) {
+        mkdir(dirname($finalPath), 0755, true);
+    }
+
+    if (!empty($attPdfs)) {
+        if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
+            $this->cleanupTempFiles([$tempMainPath]);
         } else {
             rename($tempMainPath, $finalPath);
+            $this->cleanupTempFiles($attPdfs);
         }
-
-        return [
-            'memo' => $memo,
-            'file_name' => $finalFileName,
-            'file_path' => $finalPath,
-        ];
+    } else {
+        rename($tempMainPath, $finalPath);
     }
+
+    return [
+        'memo' => $memo,
+        'file_name' => $finalFileName,
+        'file_path' => $finalPath,
+    ];
+}
 
     public function viewMemoPdfMobile($token)
     {
@@ -1605,145 +1632,162 @@ class CetakPDFController extends Controller
         }
     }
 
-// View PDF Undangan dengan URL untuk diakses langsung tanpa download
+    // View PDF Undangan dengan URL untuk diakses langsung tanpa download
+    // private function generateUndanganPdfFile($id_undangan)
+    // {
+    //     $undangan = Undangan::findOrFail($id_undangan);
+
+    //     $headerPath = public_path('assets/img/bheader.png');
+    //     $footerPath = public_path('assets/img/bfooter.png');
+
+    //     $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
+
+    //     $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
+
+    //     $tujuanIds = collect(explode(';', (string) $undangan->tujuan))->map(fn($id) => trim($id))->filter()->values()->all();
+
+    //     $tujuanUsers = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //         ->whereIn('id', $tujuanIds)
+    //         ->get()
+    //         ->map(function ($user) {
+    //             $level = $this->detectLevel($user);
+    //             $user->level_kerja = $level;
+    //             $user->bagian_text = $this->getBagianText($user, $level);
+
+    //             if (isset($user->position->nm_position)) {
+    //                 $raw = $user->position->nm_position;
+    //                 $fmt = preg_replace('/\s*\([^)]*\)\s*/', ' ', $raw);
+    //                 $fmt = trim(preg_replace('/\s+/', ' ', $fmt));
+
+    //                 if (!in_array($fmt, ['Staff', 'Direktur'])) {
+    //                     $abbr = [
+    //                         'Penanggung Jawab Senior Manager' => 'PJ SM',
+    //                         'Penanggung Jawab Manager' => 'PJ M',
+    //                         'Penanggung Jawab Supervisor' => 'PJ SPV',
+    //                         'Senior Manager' => 'SM',
+    //                         'General Manager' => 'GM',
+    //                         'Manager' => 'M',
+    //                         'Supervisor' => 'SPV',
+    //                     ];
+
+    //                     foreach ($abbr as $full => $a) {
+    //                         if (strpos($fmt, $full) !== false) {
+    //                             $fmt = str_replace($full, $a, $fmt);
+    //                             break;
+    //                         }
+    //                     }
+    //                 }
+
+    //                 $user->position->nm_position = $fmt;
+    //             }
+
+    //             return $user;
+    //         })
+    //         ->sortBy(fn($u) => optional($u->position)->id_position)
+    //         ->values();
+
+    //     $manager = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
+    //         ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$undangan->nama_bertandatangan])
+    //         ->first();
+
+    //     if ($manager) {
+    //         $level = $this->detectLevel($manager);
+    //         $manager->level_kerja = $level;
+    //         $manager->bagian_text = $this->getBagianText($manager, $level);
+    //     }
+
+    //     $cleanTag = html_entity_decode(strip_tags((string) ($undangan->isi_undangan ?? ($undangan->isi ?? ''))), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+    //     $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
+    //         'undangan' => $undangan,
+    //         'tujuanUsers' => $tujuanUsers,
+    //         'cleanTag' => $cleanTag,
+    //         'manager' => $manager,
+    //         'headerImage' => $headerBase64,
+    //         'footerImage' => $footerBase64,
+    //         'isPdf' => true,
+    //         'docStatus' => $undangan->status,
+    //     ])->setPaper('A4', 'portrait');
+
+    //     $tempMainPath = storage_path('app/temp_format_undangan_mobile_' . $undangan->id_undangan . '.pdf');
+    //     $formatUndanganPdf->save($tempMainPath);
+
+    //     $attPdfs = $this->createTempPdfsFromAnyMany($undangan->lampiran ?? null, $undangan->id_undangan, 'undangan_mobile');
+
+    //     $finalFileName = $this->sanitizeFileName($undangan->judul) . ' - ' . $undangan->id_undangan . '.pdf';
+    //     $finalPath = storage_path('app/private_pdf/' . $finalFileName);
+
+    //     if (!file_exists(dirname($finalPath))) {
+    //         mkdir(dirname($finalPath), 0755, true);
+    //     }
+
+    //     if (!empty($attPdfs)) {
+    //         if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
+    //             $this->cleanupTempFiles([$tempMainPath]);
+    //         } else {
+    //             rename($tempMainPath, $finalPath);
+    //             $this->cleanupTempFiles($attPdfs);
+    //         }
+    //     } else {
+    //         rename($tempMainPath, $finalPath);
+    //     }
+
+    //     return [
+    //         'undangan' => $undangan,
+    //         'file_name' => $finalFileName,
+    //         'file_path' => $finalPath,
+    //     ];
+    // }
     private function generateUndanganPdfFile($id_undangan)
-    {
-        $undangan = Undangan::findOrFail($id_undangan);
+{
+    $undangan = Undangan::findOrFail($id_undangan);
 
-        $headerPath = public_path('assets/img/bheader.png');
-        $footerPath = public_path('assets/img/bfooter.png');
+    $pdfData = $this->buildUndanganPdfData($undangan);
 
-        $headerBase64 = file_exists($headerPath)
-            ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath))
-            : null;
+    $cleanTag = html_entity_decode(
+        strip_tags((string) ($undangan->isi_undangan ?? ($undangan->isi ?? ''))),
+        ENT_QUOTES | ENT_HTML5,
+        'UTF-8'
+    );
 
-        $footerBase64 = file_exists($footerPath)
-            ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath))
-            : null;
+    $pdfData['cleanTag'] = $cleanTag;
 
-        $tujuanIds = collect(explode(';', (string) $undangan->tujuan))
-            ->map(fn ($id) => trim($id))
-            ->filter()
-            ->values()
-            ->all();
+    $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', $pdfData)
+        ->setPaper('A4', 'portrait');
 
-        $tujuanUsers = User::with([
-            'position',
-            'director',
-            'divisi',
-            'department',
-            'section',
-            'unit',
-        ])
-            ->whereIn('id', $tujuanIds)
-            ->get()
-            ->map(function ($user) {
-                $level = $this->detectLevel($user);
-                $user->level_kerja = $level;
-                $user->bagian_text = $this->getBagianText($user, $level);
+    $tempMainPath = storage_path('app/temp_format_undangan_mobile_' . $undangan->id_undangan . '.pdf');
+    $formatUndanganPdf->save($tempMainPath);
 
-                if (isset($user->position->nm_position)) {
-                    $raw = $user->position->nm_position;
-                    $fmt = preg_replace('/\s*\([^)]*\)\s*/', ' ', $raw);
-                    $fmt = trim(preg_replace('/\s+/', ' ', $fmt));
+    $attPdfs = $this->createTempPdfsFromAnyMany(
+        $undangan->lampiran ?? null,
+        $undangan->id_undangan,
+        'undangan_mobile'
+    );
 
-                    if (!in_array($fmt, ['Staff', 'Direktur'])) {
-                        $abbr = [
-                            'Penanggung Jawab Senior Manager' => 'PJ SM',
-                            'Penanggung Jawab Manager' => 'PJ M',
-                            'Penanggung Jawab Supervisor' => 'PJ SPV',
-                            'Senior Manager' => 'SM',
-                            'General Manager' => 'GM',
-                            'Manager' => 'M',
-                            'Supervisor' => 'SPV',
-                        ];
+    $finalFileName = $this->sanitizeFileName($undangan->judul ?: 'Undangan') . ' - ' . $undangan->id_undangan . '.pdf';
+    $finalPath = storage_path('app/private_pdf/' . $finalFileName);
 
-                        foreach ($abbr as $full => $a) {
-                            if (strpos($fmt, $full) !== false) {
-                                $fmt = str_replace($full, $a, $fmt);
-                                break;
-                            }
-                        }
-                    }
+    if (!file_exists(dirname($finalPath))) {
+        mkdir(dirname($finalPath), 0755, true);
+    }
 
-                    $user->position->nm_position = $fmt;
-                }
-
-                return $user;
-            })
-            ->sortBy(fn ($u) => optional($u->position)->id_position)
-            ->values();
-
-        $manager = User::with([
-            'position',
-            'director',
-            'divisi',
-            'department',
-            'section',
-            'unit',
-        ])
-            ->whereRaw(
-                "LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))",
-                [$undangan->nama_bertandatangan]
-            )
-            ->first();
-
-        if ($manager) {
-            $level = $this->detectLevel($manager);
-            $manager->level_kerja = $level;
-            $manager->bagian_text = $this->getBagianText($manager, $level);
-        }
-
-        $cleanTag = html_entity_decode(
-            strip_tags((string) ($undangan->isi_undangan ?? $undangan->isi ?? '')),
-            ENT_QUOTES | ENT_HTML5,
-            'UTF-8'
-        );
-
-        $formatUndanganPdf = $this->loadPdfView('format-surat.format-undangan', [
-            'undangan' => $undangan,
-            'tujuanUsers' => $tujuanUsers,
-            'cleanTag' => $cleanTag,
-            'manager' => $manager,
-            'headerImage' => $headerBase64,
-            'footerImage' => $footerBase64,
-            'isPdf' => true,
-            'docStatus' => $undangan->status,
-        ])->setPaper('A4', 'portrait');
-
-        $tempMainPath = storage_path('app/temp_format_undangan_mobile_' . $undangan->id_undangan . '.pdf');
-        $formatUndanganPdf->save($tempMainPath);
-
-        $attPdfs = $this->createTempPdfsFromAnyMany(
-            $undangan->lampiran ?? null,
-            $undangan->id_undangan,
-            'undangan_mobile'
-        );
-
-        $finalFileName = $this->sanitizeFileName($undangan->judul) . ' - ' . $undangan->id_undangan . '.pdf';
-        $finalPath = storage_path('app/private_pdf/' . $finalFileName);
-
-        if (!file_exists(dirname($finalPath))) {
-            mkdir(dirname($finalPath), 0755, true);
-        }
-
-        if (!empty($attPdfs)) {
-            if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
-                $this->cleanupTempFiles([$tempMainPath]);
-            } else {
-                rename($tempMainPath, $finalPath);
-                $this->cleanupTempFiles($attPdfs);
-            }
+    if (!empty($attPdfs)) {
+        if ($this->mergeAllPdfs($tempMainPath, $attPdfs, $finalPath)) {
+            $this->cleanupTempFiles([$tempMainPath]);
         } else {
             rename($tempMainPath, $finalPath);
+            $this->cleanupTempFiles($attPdfs);
         }
-
-        return [
-            'undangan' => $undangan,
-            'file_name' => $finalFileName,
-            'file_path' => $finalPath,
-        ];
+    } else {
+        rename($tempMainPath, $finalPath);
     }
+
+    return [
+        'undangan' => $undangan,
+        'file_name' => $finalFileName,
+        'file_path' => $finalPath,
+    ];
+}
 
     public function viewUndanganPdfMobile($token)
     {
@@ -1775,169 +1819,6 @@ class CetakPDFController extends Controller
             abort(403, 'Link tidak valid atau sudah kedaluwarsa');
         }
     }
-    // public function viewRisalahPdfUrl($id_risalah)
-    // {
-    //     try {
-    //         $risalah = Risalah::findOrFail($id_risalah);
-    //         if ($risalah->with_undangan) {
-    //             $undangan = Undangan::where('judul', $risalah->judul)->first();
-    //         } else {
-    //             $undangan = null;
-    //         }
-    //         $headerPath = public_path('assets/img/bheader.png');
-    //         $footerPath = public_path('assets/img/bfooter.png');
-    //         $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-    //         $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
-
-    //         $pemimpin = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$risalah->nama_pemimpin_acara])
-    //             ->first();
-
-    //         $notulis = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$risalah->nama_notulis_acara])
-    //             ->first();
-
-    //         if ($pemimpin) {
-    //             $level = $this->detectLevel($pemimpin);
-    //             $pemimpin->level_kerja = $level;
-    //             $pemimpin->bagian_text = $this->getBagianText($pemimpin, $level);
-    //         }
-    //         if ($notulis) {
-    //             $level = $this->detectLevel($notulis);
-    //             $notulis->level_kerja = $level;
-    //             $notulis->bagian_text = $this->getBagianText($notulis, $level);
-    //         }
-
-    //         $cleanIsi = html_entity_decode(strip_tags((string) $risalah->isi_risalah), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-    //         $formatRisalahPdf = $this->loadPdfView('format-surat.format-risalah', [
-    //             'risalah' => $risalah,
-    //             'undangan' => $undangan,
-    //             'cleanIsi' => $cleanIsi,
-    //             'pemimpin' => $pemimpin,
-    //             'notulis' => $notulis,
-    //             'headerImage' => $headerBase64,
-    //             'footerImage' => $footerBase64,
-    //             'isPdf' => true,
-    //             'docStatus' => $risalah->status,
-    //         ])->setPaper('A4', 'portrait');
-
-    //         $tempPath = storage_path('app/temp_format_risalah_' . $risalah->id_risalah . '.pdf');
-    //         $formatRisalahPdf->save($tempPath);
-
-    //         $attPdfs = $this->createTempPdfsFromAnyMany($risalah->lampiran ?? null, $risalah->id_risalah, 'risalah');
-    //         $finalFileName = $this->sanitizeFileName($risalah->judul) . ' - ' . $risalah->id_risalah . '.pdf';
-    //         $finalPath = storage_path('app/public/pdf/' . $finalFileName);
-
-    //         if (!file_exists(dirname($finalPath))) {
-    //             mkdir(dirname($finalPath), 0755, true);
-    //         }
-
-    //         if ($this->mergeAllPdfs($tempPath, $attPdfs, $finalPath)) {
-    //             $this->cleanupTempFiles([$tempPath]);
-    //         } else {
-    //             rename($tempPath, $finalPath);
-    //             $this->cleanupTempFiles($attPdfs);
-    //         }
-
-    //         $fileUrl = asset('storage/pdf/' . $finalFileName);
-
-    //         return response()->json([
-    //             'status' => 'success',
-    //             'file_name' => $finalFileName,
-    //             'url' => $fileUrl,
-    //         ]);
-    //     } catch (\Throwable $e) {
-    //         Log::error('Error in viewrisalahPDF: ' . $e->getMessage());
-    //         return response()->json(['error' => 'Gagal menampilkan PDF risalah'], 500);
-    //     }
-    // }
-
-    // public function viewrisalahPDF($id_risalah)
-    // {
-    //     try {
-    //         // Load risalah beserta detail dan sub detail sekaligus
-    //         $risalah = Risalah::with('risalahDetails.subDetails')->findOrFail($id_risalah);
-
-    //         if ($risalah->with_undangan) {
-    //             $undangan = Undangan::where('judul', $risalah->judul)->first();
-    //         } else {
-    //             $undangan = null;
-    //         }
-
-    //         $headerPath = public_path('assets/img/bheader.png');
-    //         $footerPath = public_path('assets/img/bfooter.png');
-    //         $headerBase64 = file_exists($headerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($headerPath)) : null;
-    //         $footerBase64 = file_exists($footerPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($footerPath)) : null;
-
-    //         $pemimpin = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$risalah->nama_pemimpin_acara])
-    //             ->first();
-
-    //         $notulis = User::with(['position', 'director', 'divisi', 'department', 'section', 'unit'])
-    //             ->whereRaw("LOWER(TRIM(CONCAT_WS(' ', firstname, lastname))) = LOWER(TRIM(?))", [$risalah->nama_notulis_acara])
-    //             ->first();
-
-    //         if ($pemimpin) {
-    //             $level = $this->detectLevel($pemimpin);
-    //             $pemimpin->level_kerja = $level;
-    //             $pemimpin->bagian_text = $this->getBagianText($pemimpin, $level);
-    //         }
-    //         if ($notulis) {
-    //             $level = $this->detectLevel($notulis);
-    //             $notulis->level_kerja = $level;
-    //             $notulis->bagian_text = $this->getBagianText($notulis, $level);
-    //         }
-
-    //         $cleanIsi = html_entity_decode(strip_tags((string) $risalah->isi_risalah), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-    //         $formatRisalahPdf = $this->loadPdfView('format-surat.format-risalah', [
-    //             'risalah' => $risalah,
-    //             'undangan' => $undangan,
-    //             'cleanIsi' => $cleanIsi,
-    //             'pemimpin' => $pemimpin,
-    //             'notulis' => $notulis,
-    //             'headerImage' => $headerBase64,
-    //             'footerImage' => $footerBase64,
-    //             'isPdf' => true,
-    //             'docStatus' => $risalah->status,
-    //         ])->setPaper('A4', 'portrait');
-
-    //         $mainPath = storage_path('app/temp_format_risalah_' . $risalah->id_risalah . '.pdf');
-    //         $formatRisalahPdf->save($mainPath);
-
-    //         $lampiranField = $risalah->lampiran ?? null;
-    //         Log::info('Risalah View - Lampiran raw data: ' . ($lampiranField ? substr((string) $lampiranField, 0, 100) : 'kosong'));
-
-    //         $attPdfs = $this->createTempPdfsFromAnyMany($lampiranField, $risalah->id_risalah, 'risalah');
-    //         Log::info('Risalah View - Total lampiran PDF yang dibuat: ' . count($attPdfs));
-
-    //         $output = storage_path('app/view_risalah_' . $risalah->id_risalah . '.pdf');
-
-    //         if (!empty($attPdfs)) {
-    //             if ($this->mergeAllPdfs($mainPath, $attPdfs, $output)) {
-    //                 Log::info('Risalah View - Merge PDF berhasil');
-    //                 $this->cleanupTempFiles([$mainPath]);
-    //                 return response()
-    //                     ->file($output, ['Content-Type' => 'application/pdf'])
-    //                     ->deleteFileAfterSend(true);
-    //             } else {
-    //                 Log::warning('Risalah View - Merge PDF gagal, menampilkan surat utama saja');
-    //                 $this->cleanupTempFiles($attPdfs);
-    //             }
-    //         } else {
-    //             Log::info('Risalah View - Tidak ada lampiran, menampilkan surat utama saja');
-    //         }
-
-    //         return response()
-    //             ->file($mainPath, ['Content-Type' => 'application/pdf'])
-    //             ->deleteFileAfterSend(true);
-    //     } catch (\Throwable $e) {
-    //         Log::error('Error in viewrisalahPDF: ' . $e->getMessage());
-    //         Log::error('Stack trace: ' . $e->getTraceAsString());
-    //         return response()->json(['error' => $e->getMessage()], 500);
-    //     }
-    // }
 
     public function laporanrisalahPDF(Request $request)
     {
