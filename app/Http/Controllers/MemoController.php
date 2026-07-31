@@ -148,12 +148,12 @@ class MemoController extends Controller
             ->pluck('document_id')
             ->toArray();
 
-        $sortBy = $request->get('sort_by', 'created_at');
+        $sortBy = $request->get('sort_by', 'tgl_dibuat'); // default ke tgl_dibuat
         $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
 
         $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_memo', 'judul'];
         if (!in_array($sortBy, $allowedSortColumns)) {
-            $sortBy = 'created_at';
+            $sortBy = 'tgl_dibuat'; // fallback default
         }
 
         $query = Memo::with(['divisi', 'user'])
@@ -237,12 +237,12 @@ class MemoController extends Controller
         $userId = Auth::id();
 
         $memoDiarsipkan = Arsip::where('user_id', Auth::id())->where('jenis_document', 'App\Models\Memo')->pluck('document_id')->toArray();
-        $sortBy = $request->get('sort_by', 'created_at'); // default ke created_at
+        $sortBy = $request->get('sort_by', 'tgl_dibuat'); // default ke tgl_dibuat
         $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
 
         $allowedSortColumns = ['created_at', 'tgl_disahkan', 'tgl_dibuat', 'nomor_memo', 'judul'];
         if (!in_array($sortBy, $allowedSortColumns)) {
-            $sortBy = 'created_at'; // fallback default
+            $sortBy = 'tgl_dibuat'; // fallback default
         }
 
         $query = Memo::query()->whereNotIn('id_memo', $memoDiarsipkan)->orderBy($sortBy, $sortDirection);
