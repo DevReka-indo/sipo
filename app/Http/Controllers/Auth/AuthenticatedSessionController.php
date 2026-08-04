@@ -28,7 +28,6 @@ class AuthenticatedSessionController extends Controller
         // Validasi input
         // tambah login pakai NIP
 
-
         $request->validate([
             'credential' => 'required',
             'password' => 'required',
@@ -38,18 +37,22 @@ class AuthenticatedSessionController extends Controller
         $user = User::where('email', $request->credential)->orWhere('nip', $request->credential)->first();
 
         if (!$user) {
-            return back()->withErrors([
-                'email' => 'Akun tidak terdaftar.',
-            ])->onlyInput('email');
+            return back()
+                ->withErrors([
+                    'email' => 'Akun tidak terdaftar.',
+                ])
+                ->onlyInput('email');
         }
 
         $field = $user->email === $request->credential ? 'email' : 'nip';
 
         // Coba autentikasi
         if (!Auth::attempt([$field => $request->credential, 'password' => $request->password], $request->boolean('remember'))) {
-            return back()->withErrors([
-                'password' => 'Password salah.',
-            ])->onlyInput('email');
+            return back()
+                ->withErrors([
+                    'password' => 'Password salah.',
+                ])
+                ->onlyInput('email');
         }
 
         // Regenerate session
@@ -64,14 +67,34 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        if (!Auth::check()) {
-            return redirect()->route('login');
-        }
-
         Auth::guard('web')->logout();
+
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        $logoutUrl = rtrim((string) config('services.sso.logout_url'), '/');
+
+        $redirectUri = (string) config('services.sso.after_logout_url');
+
+        return redirect()->away(
+            $logoutUrl .
+                '?' .
+                http_build_query([
+                    'client_id' => config('services.sso.client_id'),
+                    'redirect_uri' => $redirectUri,
+                ]),
+        );
     }
+    // public function destroy(Request $request): RedirectResponse
+    // {
+    //     if (!Auth::check()) {
+    //         return redirect()->route('login');
+    //     }
+
+    //     Auth::guard('web')->logout();
+    //     $request->session()->invalidate();
+    //     $request->session()->regenerateToken();
+
+    //     return redirect('/');
+    // }
 }

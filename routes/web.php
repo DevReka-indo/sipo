@@ -23,6 +23,8 @@ use App\Http\Controllers\CounterNomorSuratController;
 use App\Http\Controllers\KodeBagianController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DisposisiController;
+use App\Http\Controllers\Auth\SsoRedirectController;
+use App\Http\Controllers\Auth\SsoCallbackController;
 
 // GUEST
 Route::get('/', function () {
@@ -38,6 +40,12 @@ Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])->name(
 
 Route::get('/logout', function () {
     return redirect()->route('login');
+});
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login/sso', SsoRedirectController::class)->name('sso.login');
+
+    Route::get('/sso/callback', SsoCallbackController::class)->name('sso.callback');
 });
 
 //Route::get('/forgot-password', [ForgotPwController::class, 'showForgotPasswordForm'])->name('forgot-password');
