@@ -43,6 +43,8 @@ Route::get('/logout', function () {
 });
 
 Route::middleware('guest')->group(function () {
+    Route::get('/sso/redirect', SsoRedirectController::class)
+        ->name('sso.redirect');
     Route::get('/login/sso', SsoRedirectController::class)->name('sso.login');
 
     Route::get('/sso/callback', SsoCallbackController::class)->name('sso.callback');

@@ -12,29 +12,38 @@ class SsoRedirectController extends Controller
 {
     public function __invoke(Request $request): RedirectResponse
     {
-        $baseUrl = rtrim(
-            (string) config('services.sso.base_url'),
-            '/'
-        );
+        $baseUrl = rtrim((string) config('services.sso.base_url'), '/');
 
         $clientId = (string) config('services.sso.client_id');
         $callbackUrl = (string) config('services.sso.callback_url');
 
         if ($baseUrl === '' || $clientId === '' || $callbackUrl === '') {
-            throw new RuntimeException(
-                'Konfigurasi SSO SIPO belum lengkap.'
-            );
+            throw new RuntimeException('Konfigurasi SSO SIPO belum lengkap.');
         }
 
         $state = Str::random(40);
 
         $request->session()->put('sso_state', $state);
 
-        $authorizeUrl = $baseUrl . '/sso/authorize?' . http_build_query([
-            'client_id' => $clientId,
-            'redirect_uri' => $callbackUrl,
-            'state' => $state,
-        ]);
+        $authorizeUrl =
+            $baseUrl .
+            '/sso/authorize?' .
+            http_build_query([
+                'client_id' => $clientId,
+                'redirect_uri' => $callbackUrl,
+                'state' => $state,
+            ]);
+
+        // dd([
+        //     'checkpoint' => 'SIPO SsoRedirectController',
+        //     'base_url' => $baseUrl,
+        //     'client_id' => $clientId,
+        //     'callback_url' => $callbackUrl,
+        //     'state' => $state,
+        //     'session_state' => $request->session()->get('sso_state'),
+        //     'session_id' => $request->session()->getId(),
+        //     'authorize_url' => $authorizeUrl,
+        // ]);
 
         return redirect()->away($authorizeUrl);
     }

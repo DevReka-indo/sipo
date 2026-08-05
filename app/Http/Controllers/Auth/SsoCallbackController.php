@@ -15,10 +15,8 @@ use Throwable;
 
 class SsoCallbackController extends Controller
 {
-    public function __invoke(
-        Request $request,
-        SsoTokenService $ssoTokenService
-    ): RedirectResponse {
+    public function __invoke(Request $request, SsoTokenService $ssoTokenService): RedirectResponse
+    {
         $request->validate([
             'sso_token' => ['required', 'string'],
             'state' => ['required', 'string'],
@@ -27,30 +25,26 @@ class SsoCallbackController extends Controller
         $expectedState = $request->session()->pull('sso_state');
         $receivedState = $request->string('state')->toString();
 
-        if (
-            ! $expectedState
-            || ! hash_equals($expectedState, $receivedState)
-        ) {
-            return redirect()
-                ->route('login')
-                ->with(
-                    'error',
-                    'Login SSO gagal: state tidak valid. Silakan login ulang.'
-                );
+        // dd([
+        //     'checkpoint' => 'SIPO SsoCallbackController',
+        //     'has_token' => $request->filled('sso_token'),
+        //     'token_hash' => $request->filled('sso_token') ? hash('sha256', $request->string('sso_token')->toString()) : null,
+        //     'expected_state' => $expectedState,
+        //     'received_state' => $receivedState,
+        //     'state_match' => is_string($expectedState) && $expectedState !== '' && hash_equals($expectedState, $receivedState),
+        //     'session_id' => $request->session()->getId(),
+        // ]);
+
+        if (!$expectedState || !hash_equals($expectedState, $receivedState)) {
+            return redirect()->route('login')->with('error', 'Login SSO gagal: state tidak valid. Silakan login ulang.');
         }
 
         try {
-            $ssoUser = $ssoTokenService->verify(
-                $request->string('sso_token')->toString()
-            );
+            $ssoUser = $ssoTokenService->verify($request->string('sso_token')->toString());
 
-            $employeeId = trim(
-                (string) ($ssoUser['employee_id'] ?? '')
-            );
+            $employeeId = trim((string) ($ssoUser['employee_id'] ?? ''));
 
-            $email = trim(
-                (string) ($ssoUser['email'] ?? '')
-            );
+            $email = trim((string) ($ssoUser['email'] ?? ''));
 
             /*
             |--------------------------------------------------------------------------
@@ -64,18 +58,14 @@ class SsoCallbackController extends Controller
             $user = null;
 
             if ($employeeId !== '') {
-                $user = User::query()
-                    ->where('nip', $employeeId)
-                    ->first();
+                $user = User::query()->where('nip', $employeeId)->first();
             }
 
-            if (! $user && $email !== '') {
-                $user = User::query()
-                    ->where('email', $email)
-                    ->first();
+            if (!$user && $email !== '') {
+                $user = User::query()->where('email', $email)->first();
             }
 
-            if (! $user) {
+            if (!$user) {
                 $user = new User();
             }
 
@@ -86,16 +76,10 @@ class SsoCallbackController extends Controller
             | SIPO menggunakan firstname dan lastname, bukan kolom name.
             */
 
-            $fullName = trim(
-                (string) ($ssoUser['name'] ?? '')
-            );
+            $fullName = trim((string) ($ssoUser['name'] ?? ''));
 
             if ($fullName !== '') {
-                $nameParts = preg_split(
-                    '/\s+/',
-                    $fullName,
-                    2
-                ) ?: [];
+                $nameParts = preg_split('/\s+/', $fullName, 2) ?: [];
 
                 $firstName = $nameParts[0] ?? null;
                 $lastName = $nameParts[1] ?? null;
@@ -124,9 +108,7 @@ class SsoCallbackController extends Controller
             }
 
             if (Schema::hasColumn('users', 'sso_id')) {
-                $user->sso_id = $ssoUser['sso_id']
-                    ?? $ssoUser['sub']
-                    ?? $user->sso_id;
+                $user->sso_id = $ssoUser['sso_id'] ?? ($ssoUser['sub'] ?? $user->sso_id);
             }
 
             /*
@@ -136,10 +118,7 @@ class SsoCallbackController extends Controller
             | SIPO menggunakan role_id_role, bukan role_id.
             */
 
-            $user->role_id_role = $this->mapSsoRoleToLocalRoleId(
-                roles: $ssoUser['roles'] ?? [],
-                currentRoleId: $user->role_id_role
-            );
+            $user->role_id_role = $this->mapSsoRoleToLocalRoleId(roles: $ssoUser['roles'] ?? [], currentRoleId: $user->role_id_role);
 
             /*
             |--------------------------------------------------------------------------
@@ -147,10 +126,8 @@ class SsoCallbackController extends Controller
             |--------------------------------------------------------------------------
             */
 
-            if (! $user->exists || empty($user->password)) {
-                $user->password = bcrypt(
-                    Str::random(40)
-                );
+            if (!$user->exists || empty($user->password)) {
+                $user->password = bcrypt(Str::random(40));
             }
 
             $user->save();
@@ -159,12 +136,7 @@ class SsoCallbackController extends Controller
 
             $request->session()->regenerate();
 
-            return redirect(
-                config(
-                    'services.sso.after_login_url',
-                    '/dashboard'
-                )
-            );
+            return redirect(config('services.sso.after_login_url', '/dashboard'));
         } catch (Throwable $exception) {
             report($exception);
 
@@ -176,17 +148,12 @@ class SsoCallbackController extends Controller
 
             return redirect()
                 ->route('login')
-                ->with(
-                    'error',
-                    'Login SSO gagal: '.$exception->getMessage()
-                );
+                ->with('error', 'Login SSO gagal: ' . $exception->getMessage());
         }
     }
 
-    private function mapSsoRoleToLocalRoleId(
-        array $roles,
-        mixed $currentRoleId = null
-    ): int {
+    private function mapSsoRoleToLocalRoleId(array $roles, mixed $currentRoleId = null): int
+    {
         $roles = collect($roles);
 
         return match (true) {
